@@ -1,0 +1,46 @@
+# --- CHIAVI E SICUREZZA ---
+src/infrastructure/security/vault.key
+*.key
+
+# --- DATABASE E STORAGE LOCALE ---
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+data/db/
+
+# --- UPLOAD E LOGS ---
+data/uploads/
+data/logs/
+uploads/
+tmp/
+
+# --- AMBIENTI VIRTUALI PYTHON ---
+venv/
+env/
+ENV/
+.env
+
+# --- CONFIGURAZIONI IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- FILE DI SISTEMA WINDOWS ---
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# --- FILE DI TEST E DEBUG ---
+test_*.py
+debug.log
+
+node_modules/
+
+# --- CACHE PYTHON ---
+__pycache__/
+*.pyc
+*.pyo
+# --- STREAMLIT SECRETS ---
+.streamlit/

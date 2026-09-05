@@ -1,0 +1,11 @@
+[tool.ruff]
+# Configurazione generale per Ruff nel progetto RGD_ProgettoAzienda
+
+[tool.ruff.lint]
+ignore = [
+    "N999",   # Permette nomi come 0_home.py per l'ordinamento delle pagine di Streamlit
+    "DTZ005", # Ignora la richiesta di specificare la Timezone in datetime.now()
+    "BLE001", # Permette try-except generici nei moduli di UI e provider per evitare crash di sistema
+    "S110",   # Permette try-except-pass contestuali (es. tentativi di creazione record duplicati)
+    "S112",   # Permette try-except-continue nei loop di autenticazione/repositories
+]
