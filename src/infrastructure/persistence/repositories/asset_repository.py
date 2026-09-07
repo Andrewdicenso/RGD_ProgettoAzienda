@@ -69,14 +69,24 @@ class AssetRepository(BaseRepository[src.domain.Asset]):
 
     def _to_entity(self, data: dict[str, Any]) -> src.domain.Asset:
         """Ricostruisce l'entità corretta usando la Factory del dominio."""
-        print("DEBUG: dati letti da Supabase =", data)
+        print("DEBUG: dati letti da Supabase o CSV =", data)
 
-        nome = data.get("nome") or data.get("nome_asset") or "Senza Nome"
-        rischio = data.get("rischio") or data.get("risk_score") or 0.0
+        nome = (
+            data.get("nome")
+            or data.get("nome_asset")
+            or data.get("asset_name")
+            or data.get("name")
+            or "Senza Nome"
+        )
+
+        rischio = (
+            data.get("rischio") or data.get("risk_score") or data.get("risk") or 0.0
+        )
+
         volatilita = data.get("volatilita") or data.get("volatility") or 0.0
 
         cat_str = data.get("categoria") or data.get("tipo") or "GENERAL"
-        cat_str = cat_str.upper()
+        cat_str = str(cat_str).upper()
         try:
             categoria = AssetCategory[cat_str]
         except (KeyError, AttributeError):
@@ -86,11 +96,13 @@ class AssetRepository(BaseRepository[src.domain.Asset]):
             "id": data.get("id"),
             "company_id": data.get("company_id"),
             "nome": nome,
-            "rischio": rischio,
-            "volatilita": volatilita,
+            "rischio": float(rischio) if rischio else 0.0,
+            "volatilita": float(volatilita) if volatilita else 0.0,
             "tipo": cat_str,
             "momentum_status": data.get("momentum_status"),
-            "momentum_value": data.get("momentum_value"),
+            "momentum_value": float(data.get("momentum_value"))
+            if data.get("momentum_value")
+            else 0.0,
             "dati_extra": data.get("dati_extra"),
         }
 
