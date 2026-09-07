@@ -106,6 +106,19 @@ class IngestionService(BaseService):
             f"Avvio Motore di Ingestione Adattivo Universale per Company: {company_id}"
         )
 
+        # Controllo preliminare rigoroso dei formati ammessi e blocco codice sorgente/file non validi
+        FORMATI_AMMESSI = [".csv", ".xlsx", ".xls", ".docx", ".txt", ".pdf", ".pptx"]
+
+        nome_file = getattr(file_content, "name", "file_sconosciuto").lower()
+        if not isinstance(file_content, (bytes, io.BytesIO)) and not any(
+            nome_file.endswith(ext) for ext in FORMATI_AMMESSI
+        ):
+            self.log_ingestion_error(
+                "INVALID_FILE_FORMAT",
+                f"Formato file non autorizzato o scartato: {nome_file}",
+            )
+            return []
+
         # Normalizzazione del buffer di input
         if isinstance(file_content, bytes):
             buffer = io.BytesIO(file_content)
