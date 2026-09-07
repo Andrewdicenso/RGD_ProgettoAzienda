@@ -35,7 +35,7 @@ class DatabaseConnection:
         try:
             # Inizializzazione del client Supabase
             self.client: Client = create_client(self.url, self.key)
-            logger.info("🛡️ Connessione Cloud Supabase stabilita con successo.")
+            logger.info("Connessione Cloud Supabase stabilita con successo.")
         except Exception as e:
             logger.error(f"❌ Fallimento connessione Supabase: {e}")
             raise

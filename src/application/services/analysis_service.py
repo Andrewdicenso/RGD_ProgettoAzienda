@@ -1,3 +1,4 @@
+# src/application/services/analysis_service.py
 import logging
 from datetime import datetime
 from types import SimpleNamespace
@@ -5,16 +6,20 @@ from types import SimpleNamespace
 import numpy as np
 import pandas as pd
 
-# Moduli AI e DTO
 from src.application.services.base_service import BaseService
 from src.infrastructure.security.vault import SecureVault
+from src.simulator import (
+    AdaptiveEMA,
+    AutomaticPrescriptionMatrix,
+    CausalStressTestEngine,
+    SectoralSensitivityTensor,
+)
 
 logger = logging.getLogger(__name__)
 
 
 class AnalysisService(BaseService):
     def __init__(self, kpi_repo=None, asset_repo=None):
-        """Inizializza il servizio ricevendo i repository dal container."""
         self.kpi_repo = kpi_repo
         self.asset_repo = asset_repo
 
@@ -25,21 +30,14 @@ class AnalysisService(BaseService):
             self.vault = None
 
         self.ORE_TEORICHE_ANNUE = 2080
-        self.pesi_contesto = {
-            "Magazzino": 1.2,
-            "Fornitori": 1.5,
-            "Performance Vendite": 1.0,
-            "Produttività Risorse": 1.3,
-            "EDILE": 1.4,
-            "FASHION": 1.1,
-            "UNIVERSAL": 1.0,
-        }
+
+        # Inizializzazione dei moduli Enterprise avanzati
+        self.tensor_engine = SectoralSensitivityTensor()
+        self.adaptive_ema_engine = AdaptiveEMA(half_life_days=30.0)
+        self.stress_engine = CausalStressTestEngine()
+        self.prescription_matrix = AutomaticPrescriptionMatrix()
 
     def _calcola_trend_momentum_alpha(self, val1, val2_o_list, w1=0.7, w2=0.3):
-        """
-        Metodo di calcolo unificato per trend e momentum compatibile con entrambe le chiamate.
-        """
-        # Caso 1: Chiamata con lista storica (da analyze_asset_risk)
         if isinstance(val2_o_list, (list, tuple)):
             historical = val2_o_list
             r_oggi = val1
@@ -58,8 +56,6 @@ class AnalysisService(BaseService):
 
             proj_30 = round(r_oggi + trend_val, 2)
             return momentum, trend_val, proj_30
-
-        # Caso 2: Chiamata con due valori numerici e pesi (da esegui_scan_strategico)
         else:
             r_pesato = val1
             r_riferimento = val2_o_list
@@ -67,7 +63,6 @@ class AnalysisService(BaseService):
             return max(0.0, m_score)
 
     def analyze_asset_risk(self, asset, historical_risks=None):
-        """Analizza il rischio di un asset e restituisce un DTO completo per la suite di test."""
         if historical_risks is None:
             historical_risks = []
 
@@ -88,7 +83,6 @@ class AnalysisService(BaseService):
         else:
             momentum, trend_val, proj_30 = "Stabile", 0.0, r_oggi_val
 
-        # Determinazione del trend formattato per il test
         diff = r_oggi_val - (historical_risks[0] if historical_risks else r_oggi_val)
         if diff > 1.0:
             trend_str = "ACCELERATING"
@@ -97,12 +91,31 @@ class AnalysisService(BaseService):
         else:
             trend_str = "STABLE"
 
-        is_critical = r_oggi_val >= 7.0 or getattr(asset, "is_critical", False)
-        urgenza = "IMMEDIATE" if is_critical else "NORMAL"
+        proj_30 = min(10.0, max(0.0, round(proj_30, 2)))
 
-        # Calcolo proiezioni incrementali a 60 e 90 giorni
-        proj_60 = round(proj_30 + max(0.0, trend_val), 2)
-        proj_90 = round(proj_60 + max(0.0, trend_val), 2)
+        # Sfruttiamo il motore di stress test causale per proiezioni a 60 e 90 giorni più robuste
+        stress_res_60 = self.stress_engine.esegui_stress_test(
+            proj_30, volatilita=0.15, giorni_proiettati=30
+        )
+        proj_60 = min(10.0, max(0.0, float(stress_res_60["rischio_max_previsto"])))
+
+        stress_res_90 = self.stress_engine.esegui_stress_test(
+            proj_60, volatilita=0.18, giorni_proiettati=30
+        )
+        proj_90 = min(10.0, max(0.0, float(stress_res_90["rischio_max_previsto"])))
+
+        is_critical = (
+            r_oggi_val >= 7.0 or proj_30 >= 7.0 or getattr(asset, "is_critical", False)
+        )
+
+        if is_critical and (trend_str == "ACCELERATING" or r_oggi_val >= 8.0):
+            urgenza = "IMMEDIATE"
+        elif is_critical or trend_str == "ACCELERATING":
+            urgenza = "HIGH"
+        elif trend_str == "STABLE" and r_oggi_val > 4.0:
+            urgenza = "MEDIUM"
+        else:
+            urgenza = "NORMAL"
 
         return SimpleNamespace(
             asset_id=asset_id,
@@ -119,10 +132,6 @@ class AnalysisService(BaseService):
         )
 
     def mappa_colonne_universale(self, df):
-        """
-        Rileva e rinomina automaticamente le colonne provenienti da qualsiasi ERP/CRM.
-        Non interrompe il flusso: se non trova nulla, restituisce il df originale.
-        """
         import difflib
 
         colonne_target = {
@@ -194,34 +203,22 @@ class AnalysisService(BaseService):
         return df.rename(columns=mappa_finale)
 
     def calcola_volatilita_sistema(self, valori_rischio):
-        """
-        Rileva instabilità nei dati caricati (Anomalie di Governance).
-        """
         if len(valori_rischio) < 2:
             return 0.0
-        return round(np.std(valori_rischio), 2)
+        return round(float(np.std(valori_rischio)), 2)
 
     def _genera_consiglio_azione(self, rischio, settore, m_score=0):
-        alert = " ⚠️ ACCELERAZIONE CRITICA!" if m_score > 1.5 else ""
-        if rischio > 8:
-            consigli = {
-                "PRIMARIO_ALIMENTARE": "🚨 BLOCCO LOTTI: Rischio sanitario/scadenza. Isolare stock.",
-                "EDILE_COSTRUZIONI": "🚨 FERMO CANTIERE: Rischio penali elevato. Verificare subappalti.",
-                "TERZIARIO_LOGISTICA": "🚨 LIQUIDAZIONE: Saturazione spazi. Liberare magazzino ora.",
-                "FASHION_RETAIL": "🚨 OUTLET IMMEDIATO: Merce fuori stagione. Recuperare capitale.",
-            }
-            return (
-                consigli.get(
-                    settore, "🚨 EMERGENZA: Azione correttiva richiesta entro 24h."
-                )
-                + alert
-            )
-        elif rischio > 5:
-            return (
-                f"⚠️ MONITORAGGIO: Settore {settore} in allerta. Revisione parametri settimanale."
-                + alert
-            )
-        return "✅ NOMINALE: Proseguire secondo pianificazione."
+        # Sfruttiamo la matrice di prescrizione automatica integrata
+        days_dummy = max(10, int(100 - (rischio * 10)))
+        prescrizione = self.prescription_matrix.evaluate(
+            days_dummy, float(m_score) / 2.0
+        )
+
+        actions_str = " | ".join(prescrizione.get("actions", []))
+        level = prescrizione.get("risk_level", "STABILE")
+
+        alert = f" ⚠️ [Livello: {level}]" if rischio > 5.0 else ""
+        return f"{actions_str}{alert}"
 
     def _analizza_e_configura_motore(self, contesto, colonne):
         contesto_upper = str(contesto).upper()
@@ -229,27 +226,41 @@ class AnalysisService(BaseService):
             return {
                 "settore": "EDILE_COSTRUZIONI",
                 "soglia": 7.5,
-                "moltiplicatore": 1.2,
+                "moltiplicatore": self.tensor_engine.compute_tensor_multiplier(
+                    "EDILE_COSTRUZIONI", datetime.now().month
+                ),
             }
         if "FASHION" in contesto_upper:
             return {
                 "settore": "FASHION_RETAIL",
                 "soglia": 7.0,
-                "moltiplicatore": 1.1,
+                "moltiplicatore": self.tensor_engine.compute_tensor_multiplier(
+                    "FASHION_RETAIL", datetime.now().month
+                ),
             }
         if "LOGIST" in contesto_upper or "MAGAZZINO" in contesto_upper:
             return {
                 "settore": "TERZIARIO_LOGISTICA",
                 "soglia": 7.0,
-                "moltiplicatore": 1.3,
+                "moltiplicatore": self.tensor_engine.compute_tensor_multiplier(
+                    "TERZIARIO_LOGISTICA", datetime.now().month
+                ),
             }
         if "ALIMENT" in contesto_upper:
             return {
                 "settore": "PRIMARIO_ALIMENTARE",
                 "soglia": 6.5,
-                "moltiplicatore": 1.4,
+                "moltiplicatore": self.tensor_engine.compute_tensor_multiplier(
+                    "PRIMARIO_ALIMENTARE", datetime.now().month
+                ),
             }
-        return {"settore": "GENERAL", "soglia": 7.0, "moltiplicatore": 1.0}
+        return {
+            "settore": "GENERAL",
+            "soglia": 7.0,
+            "moltiplicatore": self.tensor_engine.compute_tensor_multiplier(
+                "GENERAL", datetime.now().month
+            ),
+        }
 
     def esegui_scan_strategico(
         self, lista_asset, contesto, fattore_stress=1.0, weights=(0.7, 0.3)
@@ -265,11 +276,7 @@ class AnalysisService(BaseService):
         config = self._analizza_e_configura_motore(contesto, colonne)
         settore_rilevato = config.get("settore", "GENERAL")
         soglia = config.get("soglia", 7.0)
-        moltiplicatore = (
-            config.get("moltiplicatore", 1.0)
-            * self.pesi_contesto.get(contesto, 1.0)
-            * fattore_stress
-        )
+        moltiplicatore = config.get("moltiplicatore", 1.0) * fattore_stress
 
         report = []
         for asset in lista_asset:
@@ -289,7 +296,9 @@ class AnalysisService(BaseService):
 
             if ore_p > 0:
                 rapporto_perdita = ore_p / self.ORE_TEORICHE_ANNUE
-                r_base = round(10 / (1 + np.exp(-15 * (rapporto_perdita - 0.15))), 2)
+                r_base = round(
+                    10.0 / (1.0 + np.exp(-15.0 * (rapporto_perdita - 0.15))), 2
+                )
             else:
                 r_base = d.get("rischio", 1.0)
 
@@ -358,8 +367,9 @@ class AnalysisService(BaseService):
         except Exception as e:
             logger.warning(f"DB Sync fallito: {e}")
 
-    def salva_report_certificato(self, report_data):
-        if not report_data:
-            return False
-        logger.info("Report salvato con successo (stub).")
-        return True
+
+def salva_report_certificato(self, report_data):
+    if not report_data:
+        return False
+    logger.info("Report salvato con successo (stub).")
+    return True
