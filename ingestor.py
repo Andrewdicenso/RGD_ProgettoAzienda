@@ -182,7 +182,8 @@ class IngestoreDati:
         Prende una riga grezza (anche complessa di SAP) e la mappa
         nei campi standard richiesti dalle entità del tuo software.
         """
-        dati_puliti = row.to_dict()
+        # Converte le chiavi in stringhe per prevenire chiavi non hashabili (es. liste)
+        dati_puliti = {str(k): v for k, v in row.to_dict().items()}
         dizionario_riferimento = self.dizionario_sap if is_sap else self.mappa_sinonimi
 
         # Per ogni campo standard richiesto dal sistema, calcoliamo dove si concentra l'attenzione

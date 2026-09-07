@@ -46,7 +46,7 @@ class AnalysisService(BaseService):
             if not historical:
                 return "Stabile", 0.0, r_oggi
 
-            diff = r_oggi - historical[-1]
+            diff = r_oggi - historical[0]
             trend_val = round(diff, 2)
 
             if trend_val > 0.5:
