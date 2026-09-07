@@ -13,11 +13,9 @@ if str(PROJECT_ROOT) not in sys.path:
 import streamlit as st  # pylint: disable=wrong-import-position
 from dotenv import load_dotenv  # pylint: disable=wrong-import-position
 
+import src.infrastructure
 from src.config import get_settings  # pylint: disable=wrong-import-position
 from src.config.di_container import DIContainer  # pylint: disable=wrong-import-position
-from src.infrastructure import (
-    configure_logging,  # pylint: disable=wrong-import-position
-)
 from src.presentation.components import (
     render_login_tabs,  # pylint: disable=wrong-import-position
 )
@@ -67,10 +65,20 @@ load_dotenv()
 
 # 4. Import dei moduli architetturali del progetto
 
-# 5. Inizializzazione globale e Dependency Container
+# 5. Inizializzazione globale e Dependency Container (con cache per la persistenza dello stato)
 settings = get_settings()
+from src.infrastructure.logging import configure_logging
+
 configure_logging()
-container = DIContainer()
+
+
+@st.cache_resource
+def get_app_container() -> DIContainer:
+    """Crea un'istanza persistente del container per mantenere lo stato in memoria."""
+    return DIContainer()
+
+
+container = get_app_container()
 
 
 # ==========================================

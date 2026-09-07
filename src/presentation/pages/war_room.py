@@ -2,7 +2,7 @@ import traceback
 
 import streamlit as st
 
-from src.config.di_container import DIContainer
+import src.config.di_container
 from src.presentation.state.session_manager import SessionManager
 
 # 1. Protezione Sicurezza
@@ -59,7 +59,7 @@ def show():
         ) as status:
             try:
                 # Dependency Injection
-                container = DIContainer()
+                container = src.config.di_container.DIContainer()
                 ingestore = container.get_ingestion_service()
                 analizzatore = container.get_analysis_service()
 

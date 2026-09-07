@@ -5,8 +5,8 @@ Fornisce i dati per l'analisi predittiva del motore RGD-Alpha.
 
 from postgrest.exceptions import APIError
 
-from src.infrastructure.persistence.db.connection import DatabaseConnection
-from src.infrastructure.persistence.repositories.base_repository import BaseRepository
+from ..db.connection import DatabaseConnection
+from .base_repository import BaseRepository
 
 
 class KPIRepository(BaseRepository):

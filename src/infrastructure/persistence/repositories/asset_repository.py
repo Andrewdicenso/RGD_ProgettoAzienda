@@ -4,25 +4,25 @@ Asset Repository - Persistence per Asset entities tramite Supabase.
 
 from typing import Any
 
-from src.domain import Asset, crea_asset_dal_dizionario
+import src.domain
 from src.domain.constants import AssetCategory
 
 from .base_repository import BaseRepository
 
 
-class AssetRepository(BaseRepository[Asset]):
+class AssetRepository(BaseRepository[src.domain.Asset]):
     """
-    Repository per Asset collegato a Supabase (tabella: asset_logs).
+    Repository per Asset collegato a Supabase (tabella: assets).
     """
 
     def __init__(self, db):
         """Inizializza AssetRepository con il client Supabase."""
         super().__init__("Asset")
         self.db = db
-        self._table = "asset_logs"
+        self._table = "assets"
         print("DEBUG: AssetRepository inizializzato con tabella =", self._table)
 
-    def _to_dict(self, asset: Asset) -> dict[str, Any]:
+    def _to_dict(self, asset: src.domain.Asset) -> dict[str, Any]:
         """Converte l'oggetto Asset nel formato colonne di Supabase."""
         print("DEBUG: converto asset in dict =", asset)
 
@@ -67,16 +67,14 @@ class AssetRepository(BaseRepository[Asset]):
         print("DEBUG: dict finale per Supabase =", result)
         return result
 
-    def _to_entity(self, data: dict[str, Any]) -> Asset:
+    def _to_entity(self, data: dict[str, Any]) -> src.domain.Asset:
         """Ricostruisce l'entità corretta usando la Factory del dominio."""
         print("DEBUG: dati letti da Supabase =", data)
 
-        # 1️⃣ Recupera i campi principali, anche con fallback
         nome = data.get("nome") or data.get("nome_asset") or "Senza Nome"
         rischio = data.get("rischio") or data.get("risk_score") or 0.0
         volatilita = data.get("volatilita") or data.get("volatility") or 0.0
 
-        # 2️⃣ Determina la categoria leggendo correttamente la colonna 'categoria' (con fallback su 'tipo')
         cat_str = data.get("categoria") or data.get("tipo") or "GENERAL"
         cat_str = cat_str.upper()
         try:
@@ -84,7 +82,6 @@ class AssetRepository(BaseRepository[Asset]):
         except (KeyError, AttributeError):
             categoria = AssetCategory.GENERAL
 
-        # 3️⃣ Ricostruisci l'entità mappando tutti i campi richiesti
         entity_data = {
             "id": data.get("id"),
             "company_id": data.get("company_id"),
@@ -99,9 +96,9 @@ class AssetRepository(BaseRepository[Asset]):
 
         print("DEBUG: entità ricostruita =", entity_data)
 
-        return crea_asset_dal_dizionario(entity_data, categoria)
+        return src.domain.crea_asset_dal_dizionario(entity_data, categoria)
 
-    def create(self, asset: Asset) -> Asset:
+    def create(self, asset: src.domain.Asset) -> src.domain.Asset:
         """Crea e salva un asset su Supabase."""
         print("DEBUG: entro in create() con asset =", asset)
 
@@ -112,7 +109,7 @@ class AssetRepository(BaseRepository[Asset]):
         self.log_info(f"Asset creato su Supabase: {asset.nome} ({asset.id})")
         return asset
 
-    def read(self, id: str) -> Asset | None:
+    def read(self, id: str) -> src.domain.Asset | None:
         """Legge un asset per ID da Supabase."""
         print("DEBUG: entro in read() con id =", id)
 
@@ -127,7 +124,7 @@ class AssetRepository(BaseRepository[Asset]):
         print("DEBUG: nessun asset trovato con id =", id)
         return None
 
-    def read_by_company(self, company_id: str) -> list[Asset]:
+    def read_by_company(self, company_id: str) -> list[src.domain.Asset]:
         """Legge tutti gli asset di una company."""
         print("DEBUG: entro in read_by_company() con company_id =", company_id)
 
@@ -144,7 +141,7 @@ class AssetRepository(BaseRepository[Asset]):
         print("DEBUG: entità trovate =", entities)
         return entities
 
-    def update(self, asset: Asset) -> Asset:
+    def update(self, asset: src.domain.Asset) -> src.domain.Asset:
         """Aggiorna un asset su Supabase."""
         print("DEBUG: entro in update() con asset =", asset)
 
@@ -169,7 +166,7 @@ class AssetRepository(BaseRepository[Asset]):
         print("DEBUG: nessun asset eliminato con id =", id)
         return False
 
-    def list_all(self) -> list[Asset]:
+    def list_all(self) -> list[src.domain.Asset]:
         """Lista tutti gli asset registrati."""
         print("DEBUG: entro in list_all()")
 
@@ -180,7 +177,7 @@ class AssetRepository(BaseRepository[Asset]):
         print("DEBUG: entità trovate =", entities)
         return entities
 
-    def list_critical(self, company_id: str) -> list[Asset]:
+    def list_critical(self, company_id: str) -> list[src.domain.Asset]:
         """Ottimizzazione: Filtra gli asset critici direttamente in Supabase."""
         print("DEBUG: entro in list_critical() con company_id =", company_id)
 

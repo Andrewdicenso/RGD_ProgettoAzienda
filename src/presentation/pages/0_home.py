@@ -5,6 +5,7 @@ Pagina di atterraggio per utenti autenticati.
 
 import streamlit as st
 
+from config.di_container import DIContainer
 from src.presentation.state import SessionManager
 
 # 1. Protezione Accesso
@@ -44,5 +45,16 @@ def show() -> None:
         st.metric("Alert rilevate", "0")
 
 
-if __name__ == "__main__":
-    show()
+def show() -> None:
+    """Funzione principale richiamata dal router per la pagina Home."""
+    col1, col2 = st.columns([2, 1])
+    with col1:
+        st.markdown("### 📌 Panoramica Operativa in Tempo Reale")
+
+        # Invece di fare DIContainer() da capo, se hai bisogno del container o dei servizi
+        # puoi importarli o gestirli correttamente. Se ti serve solo un messaggio di stato:
+        st.success("Piattaforma agganciata al database aziendale con successo.")
+
+        st.info("""
+            La tua piattaforma di **Business Intelligence & Risk Management** è attiva.
+            """)

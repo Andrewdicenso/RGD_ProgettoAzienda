@@ -218,7 +218,8 @@ class IngestoreDati:
 
             if df.empty:
                 return asset_list
-
+            # 1. RILEVAMENTO SORGENTE (È SAP oppure No?)
+            is_sap = self._rileva_sorgente_sap(df.columns)
             # 1. RILEVAMENTO SORGENTE (È SAP oppure No?)
             is_sap = self._rileva_sorgente_sap(df.columns)
             if is_sap:
