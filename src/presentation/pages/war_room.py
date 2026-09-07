@@ -83,7 +83,12 @@ def show():
                 # B. Analisi in singolo passaggio (O(N)) con acquisizione unica dei dati
                 for asset in assets:
                     try:
-                        history = [asset.rischio.value] * 5
+                        rischio_val = (
+                            asset.rischio.value
+                            if hasattr(asset.rischio, "value")
+                            else float(asset.rischio)
+                        )
+                        history = [rischio_val] * 5
                         analisi_dto = analizzatore.analyze_asset_risk(asset, history)
 
                         insight_text = getattr(
@@ -94,23 +99,31 @@ def show():
                             ),
                         )
 
+                        comp_id = getattr(
+                            asset,
+                            "company_id",
+                            getattr(asset, "azienda_id", "N/D"),
+                        )
+
                         # UI Rendering
-                        with st.expander(f"🔍 Analisi Asset: {asset.nome}"):
+                        with st.expander(
+                            f"🔍 Analisi Asset: {getattr(asset, 'nome', 'Senza Nome')}"
+                        ):
                             col_info, col_risk = st.columns([2, 1])
                             with col_info:
-                                st.write(f"**ID Azienda:** `{asset.azienda_id}`")
+                                st.write(f"**ID Azienda:** `{comp_id}`")
                                 st.info(f"**Consiglio Strategico:**\n{insight_text}")
                             with col_risk:
                                 st.metric(
                                     "Rischio Attuale",
-                                    f"{asset.rischio.value}/10",
+                                    f"{rischio_val}/10",
                                 )
 
                         # Popolamento unico del report per evitare duplicazione di calcoli
-                        report_lines.append(f"ASSET: {asset.nome}")
                         report_lines.append(
-                            f" - Rischio Attuale: {asset.rischio.value}/10"
+                            f"ASSET: {getattr(asset, 'nome', 'Senza Nome')}"
                         )
+                        report_lines.append(f" - Rischio Attuale: {rischio_val}/10")
                         report_lines.append(
                             f" - Consiglio Strategico: {insight_text}\n"
                         )
