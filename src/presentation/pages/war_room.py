@@ -1,6 +1,6 @@
 import traceback
 
-import pandas as streamlit_pd
+import pandas as pd
 import streamlit as st
 
 import src.config.di_container
@@ -60,12 +60,10 @@ def show():
             "🚀 Protocollo Analitico RGD in corso...", expanded=True
         ) as status:
             try:
-                # Dependency Injection
                 container = src.config.di_container.DIContainer()
                 ingestore = container.get_ingestion_service()
                 analizzatore = container.get_analysis_service()
 
-                # A. Ingestione Dati
                 assets = ingestore.process_file(
                     uploaded_file, SessionManager.get_user_id()
                 )
@@ -82,7 +80,6 @@ def show():
                     state="running",
                 )
 
-                # B. Analisi in singolo passaggio (O(N)) con acquisizione unica dei dati
                 for asset in assets:
                     try:
                         rischio_val = (
@@ -109,17 +106,16 @@ def show():
 
                         asset_name = getattr(asset, "nome", "Senza Nome")
 
-                        # Raccolta dati per la tabella strutturata enterprise
+                        # Salvataggio dati per la tabella enterprise (senza expander)
                         table_records.append(
                             {
-                                "id_azienda": comp_id,
-                                "nome": asset_name,
-                                "rischio": float(rischio_val),
-                                "consiglio": insight_text,
+                                "ID Azienda": comp_id,
+                                "Nome Asset": asset_name,
+                                "Rischio": float(rischio_val),
+                                "Consiglio Strategico": insight_text,
                             }
                         )
 
-                        # Popolamento unico del report per evitare duplicazione di calcoli
                         report_lines.append(f"ASSET: {asset_name}")
                         report_lines.append(f" - Rischio Attuale: {rischio_val}/10")
                         report_lines.append(
@@ -132,7 +128,6 @@ def show():
                             f"Errore nell'analisi dell'asset {getattr(asset, 'nome', 'Sconosciuto')}: {e!s}"
                         )
 
-                # C. Finalizzazione
                 status.update(label="✅ Analisi Completata", state="complete")
                 st.success(
                     f"Protocollo terminato: {analizzati_con_successo}/{len(assets)} asset elaborati con successo."
@@ -145,51 +140,51 @@ def show():
                     st.code(traceback.format_exc(), language="python")
                 return
 
-        # D. Rendering Layout Enterprise pulito con KPI e Tabella Interattiva
+        # Rendering della Dashboard Professionale a Tabella e KPI (Zero Fisarmoniche)
         if analizzati_con_successo > 0 and table_records:
-            df_vis = streamlit_pd.DataFrame(table_records)
+            df_vis = pd.DataFrame(table_records)
 
-            st.markdown("### 📊 Dashboard Operativa - Analisi Asset")
+            st.markdown("### 📈 Dashboard KPI & Asset Intelligence")
 
-            # KPI Cards superiori in stile enterprise dashboard
+            # KPI Cards superiori
             col1, col2, col3, col4 = st.columns(4)
             with col1:
-                st.metric(label="Asset Totali Analizzati", value=len(df_vis))
+                st.metric(label="Asset Totali", value=len(df_vis))
             with col2:
-                avg_risk = df_vis["rischio"].mean() if not df_vis.empty else 0.0
-                st.metric(
-                    label="Rischio Medio", value=f"{avg_risk:.1f} / 10", delta="Stabile"
-                )
+                avg_risk = df_vis["Rischio"].mean()
+                st.metric(label="Rischio Medio", value=f"{avg_risk:.1f} / 10")
             with col3:
-                st.metric(label="Stato Sistema", value="Protetto", delta="Online")
+                st.metric(label="Stato Protocollo", value="Validato", delta="OK")
             with col4:
-                st.metric(label="Conformità Formato", value="100%", delta="Validato")
+                st.metric(label="Conformità", value="100%", delta="Enterprise")
 
             st.markdown("---")
 
-            # Tabella interattiva strutturata con colonne configurate professionalmente
-            st.data_editor(
+            # Tabella Strutturata Professionale
+            st.dataframe(
                 df_vis,
                 use_container_width=True,
                 hide_index=True,
                 column_config={
-                    "id_azienda": st.column_config.TextColumn(
+                    "ID Azienda": st.column_config.TextColumn(
                         "ID Azienda", width="small"
                     ),
-                    "nome": st.column_config.TextColumn("Nome Asset", width="medium"),
-                    "rischio": st.column_config.ProgressColumn(
+                    "Nome Asset": st.column_config.TextColumn(
+                        "Nome Asset", width="medium"
+                    ),
+                    "Rischio": st.column_config.ProgressColumn(
                         "Indice di Rischio",
                         min_value=0.0,
                         max_value=10.0,
                         format="%.1f / 10",
                     ),
-                    "consiglio": st.column_config.TextColumn(
-                        "Consiglio Strategico / Insight", width="large"
+                    "Consiglio Strategico": st.column_config.TextColumn(
+                        "Insight / Consiglio", width="large"
                     ),
                 },
             )
 
-            # E. Rendering Pulsante Download
+            # Pulsante Download
             report_content = "\n".join(report_lines)
             st.divider()
             st.download_button(
