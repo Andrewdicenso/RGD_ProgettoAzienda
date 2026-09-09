@@ -2,6 +2,7 @@
 import logging
 from datetime import datetime
 from types import SimpleNamespace
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -9,6 +10,7 @@ import pandas as pd
 from src.application.services.base_service import BaseService
 from src.domain.exceptions import InvalidRiscoScoreException
 from src.domain.value_objects import RiscoScore
+from src.infrastructure.external.providers import GeminiProvider
 from src.infrastructure.security.vault import SecureVault
 from src.simulator import (
     AdaptiveEMA,
@@ -21,9 +23,15 @@ logger = logging.getLogger(__name__)
 
 
 class AnalysisService(BaseService):
-    def __init__(self, kpi_repo=None, asset_repo=None):
+    def __init__(
+        self,
+        kpi_repo=None,
+        asset_repo=None,
+        gemini_provider: GeminiProvider | None = None,
+    ):
         self.kpi_repo = kpi_repo
         self.asset_repo = asset_repo
+        self.gemini_provider = gemini_provider or GeminiProvider()
 
         try:
             self.vault = SecureVault(key_path="src/infrastructure/security/vault.key")
@@ -102,7 +110,6 @@ class AnalysisService(BaseService):
 
         proj_30 = min(10.0, max(0.0, round(proj_30, 2)))
 
-        # Sfruttiamo il motore di stress test causale per proiezioni a 60 e 90 giorni più robuste
         stress_res_60 = self.stress_engine.esegui_stress_test(
             proj_30, volatilita=0.15, giorni_proiettati=30
         )
@@ -141,6 +148,23 @@ class AnalysisService(BaseService):
             urgenza=urgenza,
             is_critical=is_critical,
         )
+
+    def genera_report_strategico_dettagliato(self, asset_dto: Any) -> str:
+        """
+        Genera un report narrativo esteso, fattuale e mirato alla risoluzione
+        delle criticità utilizzando il GeminiProvider.
+        """
+        logger.info("Generazione report strategico dettagliato via Gemini.")
+        if hasattr(asset_dto, "model_dump"):
+            data = asset_dto.model_dump()
+        elif hasattr(asset_dto, "dict"):
+            data = asset_dto.dict()
+        else:
+            data = (
+                vars(asset_dto) if hasattr(asset_dto, "__dict__") else dict(asset_dto)
+            )
+
+        return self.gemini_provider.generate_strategic_report(data)
 
     def mappa_colonne_universale(self, df):
         import difflib
@@ -343,8 +367,8 @@ class AnalysisService(BaseService):
                     "rischio": r_pesato_val,
                     "momentum_score": m_score,
                     "consiglio_strategico": consiglio_generato,
-                    "consiglio": consiglio_generato,  # Retrocompatibilità UI
-                    "insight": consiglio_generato,  # Retrocompatibilità UI
+                    "consiglio": consiglio_generato,
+                    "insight": consiglio_generato,
                     "settore": settore_rilevato,
                     "alert": (
                         "🚨 STRESS TEST ATTIVO" if fattore_stress > 1.0 else "Nominale"

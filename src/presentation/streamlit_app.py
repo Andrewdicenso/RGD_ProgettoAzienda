@@ -13,7 +13,6 @@ if str(PROJECT_ROOT) not in sys.path:
 import streamlit as st  # pylint: disable=wrong-import-position
 from dotenv import load_dotenv  # pylint: disable=wrong-import-position
 
-import src.infrastructure
 from src.config import get_settings  # pylint: disable=wrong-import-position
 from src.config.di_container import DIContainer  # pylint: disable=wrong-import-position
 from src.presentation.components import (
@@ -30,28 +29,8 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-# Ora è possibile importare qualsiasi modulo di terze parti e del progetto
-
-
-# Force Python Path resolution FIRST
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
-
 # Caricamento ambiente
 load_dotenv()
-
-
-# Force Python Path resolution FIRST
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
-
-# Caricamento ambiente
-load_dotenv()
-
 
 # 1. INIEZIONE ROOT (Eseguita TASSATIVAMENTE prima degli import da src/)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -61,11 +40,7 @@ if str(PROJECT_ROOT) not in sys.path:
 # 2. Caricamento ambiente
 load_dotenv()
 
-# 3. Import delle librerie di terze parti
-
-# 4. Import dei moduli architetturali del progetto
-
-# 5. Inizializzazione globale e Dependency Container (con cache per la persistenza dello stato)
+# 3. Inizializzazione globale e Dependency Container (con cache per la persistenza dello stato)
 settings = get_settings()
 from src.infrastructure.logging import configure_logging
 
@@ -225,13 +200,64 @@ def render_auth_pages() -> None:
 
 
 def render_app_pages() -> None:
-    """Router delle viste protette con menu di navigazione laterale."""
+    """Router delle viste protette con menu di navigazione laterale e pannello Super Admin."""
     with st.sidebar:
         st.markdown(f"### 👤 {SessionManager.get_email()}")
         st.caption(f"Ruolo: **{str(SessionManager.get_ruolo()).upper()}**")
         st.caption(f"Azienda: **{SessionManager.get_azienda()}**")
 
         st.divider()
+
+        # Pannello Super Admin / Selettore Clienti in tempo reale (con import dinamico antierrore)
+        user_role = str(SessionManager.get_ruolo()).upper()
+        user_email = SessionManager.get_email()
+
+        if user_role == "ADMIN" or user_email == "andrewdicenso@libero.it":
+            st.markdown("### 👑 Pannello Super Admin")
+            try:
+                # Sfruttiamo il container o cerchiamo il client tramite i servizi registrati
+                supabase = (
+                    container.get_supabase_client()
+                    if hasattr(container, "get_supabase_client")
+                    else None
+                )
+
+                if not supabase:
+                    # Fallback dinamico: evita un import statico non risolto dall'IDE.
+                    from importlib import import_module
+
+                    supabase_module = import_module(
+                        "src.infrastructure.supabase_client"
+                    )
+                    supabase = supabase_module.get_supabase_client()
+
+                response = (
+                    supabase.table("utenti")
+                    .select("id, email, azienda_id, ruolo")
+                    .execute()
+                )
+                utenti_db = response.data if response and response.data else []
+
+                # Lista email clienti registrati
+                lista_clienti = [u.get("email") for u in utenti_db if u.get("email")]
+
+                if lista_clienti:
+                    cliente_selezionato = st.selectbox(
+                        "Seleziona Cliente",
+                        ["Vista Globale (Tutti)"] + lista_clienti,
+                        key="super_admin_client_selector",
+                    )
+                    if cliente_selezionato != "Vista Globale (Tutti)":
+                        st.session_state["target_client_email"] = cliente_selezionato
+                        st.info(f"🎯 Monitoraggio: {cliente_selezionato}")
+                    else:
+                        st.session_state.pop("target_client_email", None)
+                else:
+                    st.info("Nessun cliente nel database.")
+            except Exception as err:
+                st.warning(f"⚠️ Impossibile caricare i clienti: {err}")
+
+            st.divider()
 
         menu = st.radio(
             "Navigazione:",
