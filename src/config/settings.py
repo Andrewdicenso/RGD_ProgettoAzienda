@@ -58,7 +58,7 @@ class Settings(BaseSettings):
         return str(self.DB_DIR / "azienda.db")
 
     # ========== SECURITY & AUTH ==========
-    VAULT_KEY_PATH: str = "src/security/vault.key"
+    VAULT_KEY_PATH: str = "src/infrastructure/security/vault.key"
     JWT_SECRET: str = "dev-secret-change-in-production"
     ADMIN_EMAIL: EmailStr = "andrewdicenso@libero.it"
     DEFAULT_ADMIN_PASSWORD: str = "WarRoom123!"

@@ -15,6 +15,8 @@ from src.application.services.base_service import BaseService
 from src.application.strategies.mapping_strategy import AttentionMappingStrategy
 from src.domain.constants import SAP_FIELD_MAPPING, SINONIMI_MAPPING
 from src.domain.entities import Asset, crea_asset_dal_dizionario
+from src.domain.exceptions import InvalidRiscoScoreException
+from src.domain.value_objects import RiscoScore
 
 logger = logging.getLogger("RGD-Alpha.IngestionService")
 
@@ -26,8 +28,9 @@ class IngestionService(BaseService):
     normalizza i flussi eterogenei e li trasforma in entità di dominio trasparenti per RGD-Alpha.
     """
 
-    def __init__(self):
+    def __init__(self, asset_repo=None):
         super().__init__("IngestionService")
+        self.asset_repo = asset_repo
         self.strategy = AttentionMappingStrategy()
 
         # Database esteso delle firme digitali dei sistemi gestionali di mercato (Fingerprinting)
@@ -51,9 +54,6 @@ class IngestionService(BaseService):
         }
 
     def _detect_source_system(self, columns: list[str]) -> str:
-        """
-        Riconosce automaticamente il sistema gestionale di provenienza in base alle intestazioni.
-        """
         cols_upper = [str(c).upper() for c in columns]
         best_match = "CUSTOM_OR_UNKNOWN"
         max_matches = 0
@@ -66,7 +66,7 @@ class IngestionService(BaseService):
 
         if max_matches > 0:
             self.log_info(
-                f"[ERP Fingerprint] Sorgente aziendale identificata con successo: {best_match} (Match score: {max_matches})"
+                f"[ERP Fingerprint] Sorgente aziendale identificata: {best_match} (Match score: {max_matches})"
             )
         else:
             self.log_info(
@@ -76,50 +76,33 @@ class IngestionService(BaseService):
         return best_match
 
     def _smart_repair_logic(self, bad_line: list[str]) -> list[str]:
-        """
-        Logica di riparazione automatica per righe CSV malformate o contaminate.
-        Unisce eventuali colonne extra derivanti da delimitatori errati.
-        """
         if len(bad_line) > 2:
             fixed_line = bad_line[:2] + [" ".join(bad_line[2:])]
             return fixed_line
         return bad_line
 
     def log_ingestion_error(self, error_type: str, details: str) -> None:
-        """Standardizzazione del logging per gli errori del motore di ingestione."""
         self.log_error(f"[{error_type}] {details}")
 
     def process_file(
         self, file_content: bytes | io.BytesIO | Any, company_id: str
     ) -> list[Asset]:
-        """
-        Esegue il protocollo completo di ingestione, rilevamento sorgente e parsing dati.
-
-        Args:
-            file_content: Buffer o contenuto in byte del file caricato
-            company_id: ID dell'azienda proprietaria dei dati
-
-        Returns:
-            Lista di entità Asset valide create
-        """
         self.log_info(
             f"Avvio Motore di Ingestione Adattivo Universale per Company: {company_id}"
         )
 
-        # Controllo preliminare rigoroso dei formati ammessi e blocco codice sorgente/file non validi
-        FORMATI_AMMESSI = [".csv", ".xlsx", ".xls", ".docx", ".txt", ".pdf", ".pptx"]
+        FORMATI_TABULARI = [".csv", ".xlsx", ".xls", ".txt"]
 
         nome_file = getattr(file_content, "name", "file_sconosciuto").lower()
         if not isinstance(file_content, (bytes, io.BytesIO)) and not any(
-            nome_file.endswith(ext) for ext in FORMATI_AMMESSI
+            nome_file.endswith(ext) for ext in FORMATI_TABULARI
         ):
             self.log_ingestion_error(
                 "INVALID_FILE_FORMAT",
-                f"Formato file non autorizzato o scartato: {nome_file}",
+                f"Formato file non tabulare o non supportato per l'ingestione diretta: {nome_file}",
             )
             return []
 
-        # Normalizzazione del buffer di input
         if isinstance(file_content, bytes):
             buffer = io.BytesIO(file_content)
         else:
@@ -127,23 +110,28 @@ class IngestionService(BaseService):
 
         df: pd.DataFrame = pd.DataFrame()
 
-        # 1. Parsing Flessibile Multi-Format (CSV prioritario o Excel intelligente)
         try:
             buffer.seek(0)
-            df = pd.read_csv(
-                buffer,
-                sep=None,
-                engine="python",
-                on_bad_lines=self._smart_repair_logic,
-                dtype=str,
-                encoding_errors="replace",
-            )
-        except Exception:
+            if nome_file.endswith((".xlsx", ".xls")):
+                df = pd.read_excel(buffer, dtype=str)
+            else:
+                df = pd.read_csv(
+                    buffer,
+                    sep=None,
+                    engine="python",
+                    on_bad_lines=self._smart_repair_logic,
+                    dtype=str,
+                    encoding_errors="replace",
+                )
+        except Exception as e:
             try:
                 buffer.seek(0)
                 df = pd.read_excel(buffer, dtype=str)
-            except Exception as e:
-                self.log_ingestion_error("CRITICAL_PARSING_FAILURE", str(e))
+            except Exception as inner_e:
+                self.log_ingestion_error(
+                    "CRITICAL_PARSING_FAILURE",
+                    f"CSV error: {e} | Excel error: {inner_e}",
+                )
                 return []
 
         if df is None or df.empty:
@@ -152,15 +140,11 @@ class IngestionService(BaseService):
             )
             return []
 
-        # 2. Ottimizzazione Memoria e Pulizia Dati
         df = df.apply(lambda x: x.str.strip() if x.dtype == "object" else x)
         df = df.dropna(how="all")
 
-        # Riconoscimento automatico del sistema sorgente tramite le colonne
         detected_system = self._detect_source_system(df.columns.tolist())
-        self.log_info(f"Sistema di origine rilevato: {detected_system}")
 
-        # Casting Tipi Numerici a precisione singola (float32) per risparmio memoria
         numeric_cols = [
             "rischio",
             "quantita",
@@ -174,13 +158,8 @@ class IngestionService(BaseService):
             if col in df.columns:
                 df[col] = pd.to_numeric(df[col], errors="coerce").astype("float32")
 
-        # 3. Identificazione Settore/Reparto tramite Strategy
         settore = self.strategy.identify_sector(df.columns)
-        self.log_info(
-            f"Settore e reparti rilevati: {settore.value if hasattr(settore, 'value') else settore}"
-        )
 
-        # 4. Normalizzazione Semantica e Creazione Entità Asset
         assets: list[Asset] = []
         for idx, row in df.iterrows():
             try:
@@ -198,27 +177,33 @@ class IngestionService(BaseService):
                     f"Riga scartata a causa di un errore nei dati: {e}",
                 )
 
+        if self.asset_repo and assets:
+            try:
+                for asset in assets:
+                    self.asset_repo.save(asset)
+                self.log_info(
+                    f"Persistenza di {len(assets)} asset completata sul repository."
+                )
+            except Exception as db_err:
+                self.log_warning(
+                    f"Errore durante il salvataggio degli asset su DB: {db_err}"
+                )
+
         self.log_info(
             f"Ingestione completata: {len(assets)} asset generati con successo dal sistema {detected_system}."
         )
         return assets
 
     def _mappa_campi(self, raw_data: dict[str, Any], index: int) -> dict[str, Any]:
-        """
-        Applica i dizionari di traduzione SAP, i sinonimi di dominio,
-        il fuzzy matching semantico e il fallback posizionale di sicurezza.
-        """
         pulito: dict[str, Any] = {}
         values_list = list(raw_data.values())
 
-        # 1. Mappatura Campi SAP/ERP se presenti
         if hasattr(SAP_FIELD_MAPPING, "items"):
             for sap_key, target in SAP_FIELD_MAPPING.items():
                 for key, val in raw_data.items():
                     if str(key).strip().upper() == str(sap_key).strip().upper():
                         pulito[target] = val
 
-        # 2. Mappatura Sinonimi Standard
         if hasattr(SINONIMI_MAPPING, "items"):
             for target, sinonimi in SINONIMI_MAPPING.items():
                 if target not in pulito:
@@ -228,7 +213,6 @@ class IngestionService(BaseService):
                             pulito[target] = val
                             break
 
-        # 3. Fallback semantico euristico avanzato per coprire colonne come 'prodotto' o 'magazzino'
         for key, val in raw_data.items():
             k_low = str(key).strip().lower()
             if (
@@ -260,7 +244,6 @@ class IngestionService(BaseService):
             ):
                 pulito["rischio"] = val
 
-        # 4. Fallback Posizionale e di Sicurezza (Evita scarti e garantisce ID/Nome validi)
         if not pulito.get("id"):
             pulito["id"] = f"AST-{index + 1}"
 
@@ -277,16 +260,27 @@ class IngestionService(BaseService):
         if "rischio" not in pulito or pulito["rischio"] is None:
             pulito["rischio"] = 0.0
 
-        # Conserva tutti i dati grezzi originali in dati_extra per tracciabilità totale
+        raw_rischio = pulito.get("rischio", 0.0)
+        try:
+            val_rischio_float = float(raw_rischio) if raw_rischio is not None else 0.0
+            score_obj = RiscoScore(val_rischio_float)
+            pulito["rischio"] = score_obj.value
+        except (InvalidRiscoScoreException, ValueError, TypeError):
+            try:
+                numeric_fallback = (
+                    float(raw_rischio) if raw_rischio is not None else 0.0
+                )
+                clamped_val = max(0.0, min(10.0, numeric_fallback))
+                pulito["rischio"] = RiscoScore(clamped_val).value
+            except Exception:
+                pulito["rischio"] = 0.0
+
         pulito["dati_extra"] = raw_data
         return pulito
 
-    def process_file_with_dto(
+    def process_file_with_DTO(
         self, file_content: bytes, file_name: str, user_id: str, company_id: str
     ) -> FileIngestionResponseDTO:
-        """
-        Wrapper che esegue l'ingestione universale e restituisce un DTO strutturato per la UI della War Room.
-        """
         assets = self.process_file(file_content, company_id)
 
         return FileIngestionResponseDTO(

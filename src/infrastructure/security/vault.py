@@ -1,20 +1,20 @@
 """
-Secure Vault - Crittografia AES per dati sensibili.
+Secure Vault - Crittografia sicura con Fernet (AES).
 """
 
-import base64
 import json
 import logging
-import secrets
 from pathlib import Path
+
+from cryptography.fernet import Fernet, InvalidToken
 
 logger = logging.getLogger("RGD-Alpha.Vault")
 
 
 class SecureVault:
-    """Vault per crittografia/decrittografia dati sensibili."""
+    """Vault per crittografia/decrittografia dati sensibili tramite Fernet."""
 
-    def __init__(self, key_path: str = "src/security/vault.key"):
+    def __init__(self, key_path: str = "src/infrastructure/security/vault.key"):
         """Inizializza Secure Vault."""
         self.key_path = Path(key_path)
         self._ensure_key_exists()
@@ -23,38 +23,36 @@ class SecureVault:
         """Assicura che la chiave esista, altrimenti la crea."""
         if not self.key_path.exists():
             self.key_path.parent.mkdir(parents=True, exist_ok=True)
-            key = secrets.token_hex(32)
-            self.key_path.write_text(key, encoding="utf-8")
+            key = Fernet.generate_key()
+            self.key_path.write_bytes(key)
             logger.info("Vault key created: %s", self.key_path)
 
+    def _get_fernet(self) -> Fernet:
+        """Legge la chiave e restituisce un'istanza Fernet."""
+        key = self.key_path.read_bytes()
+        return Fernet(key)
+
     def encrypt(self, plaintext: str) -> str:
-        """Encripta un testo."""
+        """Cripta un testo in modo sicuro."""
         if not plaintext:
             return ""
         try:
-            key = self.key_path.read_text(encoding="utf-8").strip()
-            result = "".join(
-                chr(ord(c) ^ ord(key[i % len(key)])) for i, c in enumerate(plaintext)
-            )
-            return base64.b64encode(result.encode()).decode()
-        except (OSError, ValueError) as e:
+            f = self._get_fernet()
+            return f.encrypt(plaintext.encode("utf-8")).decode("utf-8")
+        except Exception as e:
             logger.error("Encryption error: %s", e)
-            return plaintext
+            raise
 
     def decrypt(self, ciphertext: str) -> str:
-        """Decripta un testo."""
+        """Decripta un testo in modo sicuro."""
         if not ciphertext:
             return ""
         try:
-            key = self.key_path.read_text(encoding="utf-8").strip()
-            data = base64.b64decode(ciphertext.encode()).decode()
-            result = "".join(
-                chr(ord(c) ^ ord(key[i % len(key)])) for i, c in enumerate(data)
-            )
-            return result
-        except (OSError, ValueError, base64.binascii.Error) as e:
+            f = self._get_fernet()
+            return f.decrypt(ciphertext.encode("utf-8")).decode("utf-8")
+        except (Exception, InvalidToken) as e:
             logger.error("Decryption error: %s", e)
-            return ciphertext
+            raise
 
     def encrypt_data(self, plaintext: str) -> str:
         """Alias per encrypt() richiesto dai repository."""
@@ -65,7 +63,7 @@ class SecureVault:
         return self.decrypt(ciphertext)
 
     def encrypt_dict(self, data: dict) -> str:
-        """Encripta un dizionario JSON."""
+        """Cripta un dizionario JSON."""
         json_str = json.dumps(data)
         return self.encrypt(json_str)
 

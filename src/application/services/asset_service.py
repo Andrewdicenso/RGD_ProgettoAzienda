@@ -10,6 +10,8 @@ from src.application.dto import AssetDTO
 from src.application.mappers import AssetMapper
 from src.application.services.base_service import BaseService
 from src.domain import Asset
+from src.domain.exceptions import InvalidRiscoScoreException
+from src.domain.value_objects import RiscoScore
 
 logger = logging.getLogger("RGD-Alpha.AssetService")
 
@@ -32,6 +34,22 @@ class AssetService(BaseService):
         """
         print("DEBUG: entro in create_asset")
         print("DEBUG: asset ricevuto =", asset)
+
+        # Validazione e normalizzazione robusta del rischio tramite RiscoScore Value Object prima della persistenza
+        if hasattr(asset, "rischio") and asset.rischio is not None:
+            try:
+                val_rischio_float = float(asset.rischio)
+                score_obj = RiscoScore(val_rischio_float)
+                asset.rischio = score_obj.value
+            except (InvalidRiscoScoreException, ValueError, TypeError):
+                try:
+                    numeric_fallback = (
+                        float(asset.rischio) if asset.rischio is not None else 0.0
+                    )
+                    clamped_val = max(0.0, min(10.0, numeric_fallback))
+                    asset.rischio = RiscoScore(clamped_val).value
+                except Exception:
+                    asset.rischio = 0.0
 
         self.log_info(
             f"Salvataggio asset '{asset.nome}' (ID: {asset.id}) per Company: {asset.company_id}"
@@ -143,8 +161,25 @@ class AssetService(BaseService):
         print("DEBUG: entro in update_asset_risk")
         print("DEBUG: asset_id =", asset_id, "nuovo rischio =", new_risk_value)
 
+        # Validazione e normalizzazione rigorosa del nuovo valore tramite RiscoScore Value Object
+        try:
+            val_rischio_float = (
+                float(new_risk_value) if new_risk_value is not None else 0.0
+            )
+            score_obj = RiscoScore(val_rischio_float)
+            validated_risk_value = score_obj.value
+        except (InvalidRiscoScoreException, ValueError, TypeError):
+            try:
+                numeric_fallback = (
+                    float(new_risk_value) if new_risk_value is not None else 0.0
+                )
+                clamped_val = max(0.0, min(10.0, numeric_fallback))
+                validated_risk_value = RiscoScore(clamped_val).value
+            except Exception:
+                validated_risk_value = 0.0
+
         self.log_info(
-            f"Aggiornamento rischio per asset {asset_id} -> Nuovo valore: {new_risk_value}"
+            f"Aggiornamento rischio per asset {asset_id} -> Nuovo valore validato: {validated_risk_value}"
         )
 
         # 1. Recupera l'entità (da DB o cache)
@@ -169,9 +204,9 @@ class AssetService(BaseService):
 
         # 3. Applica modifica del rischio sull'entità di dominio
         if hasattr(asset, "aggiorna_rischio"):
-            asset.aggiorna_rischio(new_risk_value)
+            asset.aggiorna_rischio(validated_risk_value)
         elif hasattr(asset, "rischio"):
-            asset.rischio = new_risk_value
+            asset.rischio = validated_risk_value
 
         print("DEBUG: asset dopo aggiornamento rischio =", asset)
 

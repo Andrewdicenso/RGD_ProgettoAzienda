@@ -7,6 +7,8 @@ import numpy as np
 import pandas as pd
 
 from src.application.services.base_service import BaseService
+from src.domain.exceptions import InvalidRiscoScoreException
+from src.domain.value_objects import RiscoScore
 from src.infrastructure.security.vault import SecureVault
 from src.simulator import (
     AdaptiveEMA,
@@ -76,6 +78,13 @@ class AnalysisService(BaseService):
         else:
             r_oggi_val = float(r_oggi)
 
+        try:
+            r_score_obj = RiscoScore(r_oggi_val)
+            r_oggi_val = r_score_obj.value
+        except InvalidRiscoScoreException:
+            r_score_obj = RiscoScore(max(0.0, min(10.0, r_oggi_val)))
+            r_oggi_val = r_score_obj.value
+
         if historical_risks:
             momentum, trend_val, proj_30 = self._calcola_trend_momentum_alpha(
                 r_oggi_val, historical_risks
@@ -105,22 +114,24 @@ class AnalysisService(BaseService):
         proj_90 = min(10.0, max(0.0, float(stress_res_90["rischio_max_previsto"])))
 
         is_critical = (
-            r_oggi_val >= 7.0 or proj_30 >= 7.0 or getattr(asset, "is_critical", False)
+            r_score_obj.is_critical
+            or proj_30 >= 7.0
+            or getattr(asset, "is_critical", False)
         )
 
-        if is_critical and (trend_str == "ACCELERATING" or r_oggi_val >= 8.0):
+        if is_critical and (trend_str == "ACCELERATING" or r_score_obj.value >= 8.0):
             urgenza = "IMMEDIATE"
         elif is_critical or trend_str == "ACCELERATING":
             urgenza = "HIGH"
-        elif trend_str == "STABLE" and r_oggi_val > 4.0:
+        elif trend_str == "STABLE" and r_score_obj.value > 4.0:
             urgenza = "MEDIUM"
         else:
             urgenza = "NORMAL"
 
         return SimpleNamespace(
             asset_id=asset_id,
-            score=r_oggi_val,
-            rischio_attuale=r_oggi_val,
+            score=r_score_obj.value,
+            rischio_attuale=r_score_obj.value,
             trend_value=trend_val,
             trend=trend_str,
             momentum=momentum,
@@ -208,7 +219,6 @@ class AnalysisService(BaseService):
         return round(float(np.std(valori_rischio)), 2)
 
     def _genera_consiglio_azione(self, rischio, settore, m_score=0):
-        # Sfruttiamo la matrice di prescrizione automatica integrata
         days_dummy = max(10, int(100 - (rischio * 10)))
         prescrizione = self.prescription_matrix.evaluate(
             days_dummy, float(m_score) / 2.0
@@ -275,7 +285,7 @@ class AnalysisService(BaseService):
 
         config = self._analizza_e_configura_motore(contesto, colonne)
         settore_rilevato = config.get("settore", "GENERAL")
-        soglia = config.get("soglia", 7.0)
+        config.get("soglia", 7.0)
         moltiplicatore = config.get("moltiplicatore", 1.0) * fattore_stress
 
         report = []
@@ -303,25 +313,33 @@ class AnalysisService(BaseService):
                 r_base = d.get("rischio", 1.0)
 
             r_pesato = round(r_base * moltiplicatore, 2)
+
+            try:
+                r_pesato_obj = RiscoScore(r_pesato)
+            except InvalidRiscoScoreException:
+                r_pesato_obj = RiscoScore(max(0.0, min(10.0, r_pesato)))
+
+            r_pesato_val = r_pesato_obj.value
+
             m_score = self._calcola_trend_momentum_alpha(
-                r_pesato, r_base * 0.85, w1=weights[0], w2=weights[1]
+                r_pesato_val, r_base * 0.85, w1=weights[0], w2=weights[1]
             )
-            stato = (
-                "CRITICO"
-                if r_pesato > soglia
-                else "OTTIMALE"
-                if r_pesato < 5
-                else "ATTENZIONE"
-            )
+
+            if r_pesato_obj.is_critical:
+                stato = "CRITICO"
+            elif r_pesato_obj.is_safe:
+                stato = "OTTIMALE"
+            else:
+                stato = "ATTENZIONE"
 
             report.append(
                 {
                     "asset": nome,
                     "stato": stato,
-                    "rischio": r_pesato,
+                    "rischio": r_pesato_val,
                     "momentum_score": m_score,
                     "consiglio_strategico": self._genera_consiglio_azione(
-                        r_pesato, settore_rilevato, m_score
+                        r_pesato_val, settore_rilevato, m_score
                     ),
                     "settore": settore_rilevato,
                     "alert": (
@@ -329,7 +347,7 @@ class AnalysisService(BaseService):
                     ),
                 }
             )
-            self._archivia_asset(d, r_pesato, str(m_score))
+            self._archivia_asset(d, r_pesato_val, str(m_score))
         return report
 
     def analizza_giacenze_e_proponi_marketing(self, df):
@@ -356,20 +374,22 @@ class AnalysisService(BaseService):
 
     def _archivia_asset(self, d, rischio, momentum_str="Stabile"):
         try:
-            self.db.salva_asset(
-                user_id=d.get("user_id", 1),
-                nome_asset=d.get("nome"),
-                rischio=rischio,
-                tipo=d.get("tipo", "Enterprise"),
-                momentum=momentum_str,
-                volatilita=0.0,
-            )
+            if self.kpi_repo:
+                self.kpi_repo.record_kpi(
+                    asset_id=d.get("id", d.get("nome")),
+                    risk_value=rischio,
+                    metadata={
+                        "tipo": d.get("tipo", "Enterprise"),
+                        "momentum": momentum_str,
+                    },
+                )
+            elif self.asset_repo:
+                pass
         except Exception as e:
-            logger.warning(f"DB Sync fallito: {e}")
+            logger.warning(f"DB Sync fallito tramite repository: {e}")
 
-
-def salva_report_certificato(self, report_data):
-    if not report_data:
-        return False
-    logger.info("Report salvato con successo (stub).")
-    return True
+    def salva_report_certificato(self, report_data):
+        if not report_data:
+            return False
+        logger.info("Report salvato con successo (stub).")
+        return True

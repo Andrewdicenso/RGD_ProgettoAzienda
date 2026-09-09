@@ -1,9 +1,0 @@
-__init__
-analyst
-application
-config
-domain
-infrastructure
-presentation
-security
-simulator

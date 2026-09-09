@@ -6,7 +6,6 @@ import torch
 import torch.nn.functional as F
 
 try:
-    from src.database import DatabaseAziendale  # type: ignore[import-not-found]
     from src.entities import (  # type: ignore[import-not-found]
         AssetDiMercato,
         AssetDiRelazione,
@@ -14,10 +13,16 @@ try:
         AssetStrategico,
     )
     from src.secure_vault import SecureVault  # type: ignore[import-not-found]
+
+    from src.infrastructure.persistence.db.connection import (
+        DatabaseConnection,
+    )
 except (
     ImportError
 ):  # pragma: no cover - fallback for execution outside a package context
-    from database import DatabaseAziendale  # type: ignore[reportMissingImports]
+    from database import (  # type: ignore[reportMissingImports]
+        DatabaseConnection,
+    )
     from entities import (  # type: ignore[import-not-found]
         AssetDiMercato,
         AssetDiRelazione,
@@ -30,9 +35,9 @@ logger = logging.getLogger("RGD-Alpha.Ingestor")
 
 
 class IngestoreDati:
-    def __init__(self, key_path="src/security/vault.key"):
+    def __init__(self, key_path="src/infrastructure/security/vault.key"):
         self.vault = SecureVault(key_path=key_path)
-        self.db = DatabaseAziendale()
+        self.db = DatabaseConnection()
 
         # 1. DIZIONARIO DI TRADUZIONE SAP (Keys per il rilevamento del sistema sorgente)
         self.dizionario_sap = {
@@ -107,7 +112,14 @@ class IngestoreDati:
         }
 
         self.settori_keys = {
-            "FINANCE": ["fattura", "iban", "lordo", "costo_unitario", "netwr", "dmbtr"],
+            "FINANCE": [
+                "fattura",
+                "iban",
+                "lordo",
+                "costo_unitario",
+                "netwr",
+                "dmbtr",
+            ],
             "LOGISTICS": [
                 "bolla",
                 "ddt",
@@ -218,8 +230,7 @@ class IngestoreDati:
 
             if df.empty:
                 return asset_list
-            # 1. RILEVAMENTO SORGENTE (È SAP oppure No?)
-            is_sap = self._rileva_sorgente_sap(df.columns)
+
             # 1. RILEVAMENTO SORGENTE (È SAP oppure No?)
             is_sap = self._rileva_sorgente_sap(df.columns)
             if is_sap:
@@ -232,7 +243,6 @@ class IngestoreDati:
 
             for _, row in df.iterrows():
                 # 3. PULIZIA E NORMALIZZAZIONE DELLA RIGA
-                # Qui convertiamo i codici SAP tipo 'MATNR' nel tuo campo pulito 'nome'
                 dati_normalizzati = self._normalizza_riga_intelligente(row, is_sap)
 
                 try:
@@ -240,9 +250,6 @@ class IngestoreDati:
                     if hasattr(nuovo_asset, "genera_kpi_strategici"):
                         nuovo_asset.genera_kpi_strategici()
 
-                    # Salva nel database aziendale per rendere i dati storici pronti per la predizione.
-                    # Alcune implementazioni del database possono non fornire ancora questo hook:
-                    # in tal caso l'ingestione continua producendo comunque gli asset.
                     salva_asset = getattr(self.db, "salva_asset", None)
                     if callable(salva_asset):
                         salva_asset(nuovo_asset, company_id)
