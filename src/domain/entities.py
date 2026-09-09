@@ -44,6 +44,8 @@ class Asset:
 
     def __post_init__(self):
         """Validazione al momento della creazione."""
+        if isinstance(self.rischio, (int, float)):
+            self.rischio = RiscoScore(float(self.rischio))
         if not self.nome:
             raise InvalidAssetException("Asset nome non può essere vuoto")
         if not self.company_id:
@@ -52,12 +54,16 @@ class Asset:
     @property
     def is_critical(self) -> bool:
         """Vero se asset richiede intervento immediato."""
-        return self.rischio.is_critical
+        if hasattr(self.rischio, "is_critical"):
+            return self.rischio.is_critical
+        return float(self.rischio) >= 7.0
 
     @property
     def is_warning(self) -> bool:
         """Vero se asset in stato di avvertenza."""
-        return self.rischio.is_warning
+        if hasattr(self.rischio, "is_warning"):
+            return self.rischio.is_warning
+        return float(self.rischio) >= 4.0
 
     def aggiorna_rischio(self, nuovo_rischio: float) -> None:
         """Aggiorna il punteggio di rischio."""

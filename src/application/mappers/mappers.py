@@ -33,8 +33,17 @@ class AssetMapper:
             id=asset.id,
             nome=asset.nome,
             categoria=asset.categoria.value,
-            rischio_value=asset.rischio.value,
-            rischio_level=asset.rischio.level.value,
+            rischio_value=(
+                asset.rischio.value
+                if hasattr(asset.rischio, "value")
+                else float(asset.rischio)
+            ),
+            rischio_level=(
+                asset.rischio.level.value
+                if hasattr(asset.rischio, "level")
+                and hasattr(asset.rischio.level, "value")
+                else "UNKNOWN"
+            ),
             momentum_status=asset.momentum.status.value,
             momentum_value=asset.momentum.value,
             volatilita_value=asset.volatilita.value,

@@ -38,18 +38,25 @@ class AssetService(BaseService):
         # Validazione e normalizzazione robusta del rischio tramite RiscoScore Value Object prima della persistenza
         if hasattr(asset, "rischio") and asset.rischio is not None:
             try:
-                val_rischio_float = float(asset.rischio)
-                score_obj = RiscoScore(val_rischio_float)
-                asset.rischio = score_obj.value
+                # Se è già un RiscoScore, manteniamolo o estraiamone il valore correttamente
+                if isinstance(asset.rischio, RiscoScore):
+                    pass  # Mantiene l'oggetto corretto
+                else:
+                    val_rischio_float = float(asset.rischio)
+                    asset.rischio = RiscoScore(val_rischio_float)
             except (InvalidRiscoScoreException, ValueError, TypeError):
                 try:
                     numeric_fallback = (
-                        float(asset.rischio) if asset.rischio is not None else 0.0
+                        float(asset.rischio.value)
+                        if hasattr(asset.rischio, "value")
+                        else (
+                            float(asset.rischio) if asset.rischio is not None else 0.0
+                        )
                     )
                     clamped_val = max(0.0, min(10.0, numeric_fallback))
-                    asset.rischio = RiscoScore(clamped_val).value
+                    asset.rischio = RiscoScore(clamped_val)
                 except Exception:
-                    asset.rischio = 0.0
+                    asset.rischio = RiscoScore(0.0)
 
         self.log_info(
             f"Salvataggio asset '{asset.nome}' (ID: {asset.id}) per Company: {asset.company_id}"

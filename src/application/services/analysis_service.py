@@ -332,15 +332,19 @@ class AnalysisService(BaseService):
             else:
                 stato = "ATTENZIONE"
 
+            consiglio_generato = self._genera_consiglio_azione(
+                r_pesato_val, settore_rilevato, m_score
+            )
+
             report.append(
                 {
                     "asset": nome,
                     "stato": stato,
                     "rischio": r_pesato_val,
                     "momentum_score": m_score,
-                    "consiglio_strategico": self._genera_consiglio_azione(
-                        r_pesato_val, settore_rilevato, m_score
-                    ),
+                    "consiglio_strategico": consiglio_generato,
+                    "consiglio": consiglio_generato,  # Retrocompatibilità UI
+                    "insight": consiglio_generato,  # Retrocompatibilità UI
                     "settore": settore_rilevato,
                     "alert": (
                         "🚨 STRESS TEST ATTIVO" if fattore_stress > 1.0 else "Nominale"
@@ -367,7 +371,7 @@ class AnalysisService(BaseService):
                         "asset": row.get("nome"),
                         "giorni": giorni,
                         "recupero_stimato": f"€ {round(valore * (1 - sconto), 2)}",
-                        "consiglio": f"🚨 BLOCCATI {giorni}gg. Applica sconto {int(sconto * 100)}%.",
+                        "consiglio": f"🚨 BLOCCATI {giorni}gg. Applica sconto {int(sconto * 100)}%\u200b.",
                     }
                 )
         return proposte

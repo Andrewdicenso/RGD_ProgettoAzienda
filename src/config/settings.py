@@ -8,7 +8,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from pydantic import EmailStr, Field
+from pydantic import ConfigDict, EmailStr, Field
 from pydantic_settings import BaseSettings
 
 
@@ -124,11 +124,12 @@ class Settings(BaseSettings):
     }
 
     # ========== CONFIGURAZIONE PYDANTIC SETTINGS ==========
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        extra = "ignore"  # Ignora eventuali variabili extra presenti nel file .env
-        case_sensitive = True
+    model_config = ConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",  # Ignora eventuali variabili extra presenti nel file .env
+        case_sensitive=True,
+    )
 
     def ensure_directories(self) -> None:
         """Crea le directory di sistema se non esistono."""
