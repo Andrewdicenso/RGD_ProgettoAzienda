@@ -245,6 +245,23 @@ class IngestoreDati:
                 # 3. PULIZIA E NORMALIZZAZIONE DELLA RIGA
                 dati_normalizzati = self._normalizza_riga_intelligente(row, is_sap)
 
+                # --- FILTRO DI SCARTO PER RIGHE SPURIE O CONFIGURAZIONI ---
+                nome_asset = str(dati_normalizzati.get("nome", ""))
+                id_asset = str(dati_normalizzati.get("id_asset", ""))
+
+                testo_combinato = (nome_asset + " " + id_asset).lower()
+                if (
+                    "postgresql://" in testo_combinato
+                    or "subtotal" in testo_combinato
+                    or "total" in testo_combinato
+                ):
+                    continue
+                if (
+                    len(nome_asset) == 10 and nome_asset.count("-") == 2
+                ):  # Ignora date pure
+                    continue
+                # ---------------------------------------------------------
+
                 try:
                     nuovo_asset = ClasseAsset(**dati_normalizzati)
                     if hasattr(nuovo_asset, "genera_kpi_strategici"):
