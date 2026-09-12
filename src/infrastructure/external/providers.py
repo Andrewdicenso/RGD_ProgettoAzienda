@@ -204,7 +204,7 @@ class AIProvider:
             return
         try:
             # Import lazy per evitare errori in ambiente di sviluppo senza SDK
-            from google import genai  # type: ignore
+            import google.generativeai as genai  # type: ignore
 
             self.gemini_client = genai.Client(api_key=self.gemini_key)
             logger.info("Gemini client inizializzato.")

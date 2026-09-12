@@ -4,8 +4,8 @@ from typing import Any
 from .base_model import AIModelInterface
 
 try:
-    from google import genai  # type: ignore[reportMissingImports]
-    from google.genai import types  # type: ignore[reportMissingImports]
+    import google.generativeai as genai  # type: ignore[reportMissingImports]
+    from google.generativeai import types  # type: ignore[reportMissingImports]
 except ImportError:  # pragma: no cover
     genai = None  # type: ignore[assignment]
     types = None  # type: ignore[assignment]

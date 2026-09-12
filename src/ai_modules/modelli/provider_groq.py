@@ -37,7 +37,7 @@ class GroqAIProvider(AIModelInterface):
         # ------------------------------------------------------------------
         if self.gemini_key:
             try:
-                from google import genai
+                import google.generativeai as genai
 
                 self.client = genai.Client(api_key=self.gemini_key)
                 self.provider_type = "gemini"

@@ -34,7 +34,6 @@ class AssetRepository(BaseRepository[src.domain.Asset]):
         volatilita_val = (
             asset.volatilita.value if hasattr(asset.volatilita, "value") else 0.0
         )
-
         cat_val = (
             asset.categoria.value
             if hasattr(asset.categoria, "value")
@@ -66,6 +65,10 @@ class AssetRepository(BaseRepository[src.domain.Asset]):
 
         print("DEBUG: dict finale per Supabase =", result)
         return result
+
+    def save(self, asset):
+        """Salva un asset usando il metodo create della classe base."""
+        return self.create(asset)
 
     def _to_entity(self, data: dict[str, Any]) -> src.domain.Asset:
         """Ricostruisce l'entità corretta usando la Factory del dominio."""
