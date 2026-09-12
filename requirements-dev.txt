@@ -1,0 +1,14 @@
+# Testing
+pytest>=7.0.0
+pytest-cov==7.1.0
+coverage==7.16.0
+
+# Code Quality & Type Checking (inclusi i tipi di pandas)
+ruff==0.16.6
+mypy>=1.5.0
+pandas-stubs>=2.0.0
+mypy_extensions==1.1.0
+
+# Utility
+requests==2.34.2
+tqdm==4.70.0

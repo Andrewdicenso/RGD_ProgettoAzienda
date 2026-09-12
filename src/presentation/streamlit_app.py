@@ -5,7 +5,7 @@ Main Entrypoint - Streamlit Application Dashboard.
 import sys
 from pathlib import Path
 
-# Force Python Path resolution FIRST
+# 1. INIEZIONE ROOT (TASSATIVAMENTE la prima operazione in assoluto)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -22,25 +22,10 @@ from src.presentation.state import (
     SessionManager,  # pylint: disable=wrong-import-position
 )
 
-# ==============================================================================
-# INIEZIONE ROOT (Deve essere eseguita TASSATIVAMENTE prima di qualsiasi 'from src...')
-# ==============================================================================
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
 # Caricamento ambiente
 load_dotenv()
 
-# 1. INIEZIONE ROOT (Eseguita TASSATIVAMENTE prima degli import da src/)
-PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
-if str(PROJECT_ROOT) not in sys.path:
-    sys.path.insert(0, str(PROJECT_ROOT))
-
-# 2. Caricamento ambiente
-load_dotenv()
-
-# 3. Inizializzazione globale e Dependency Container (con cache per la persistenza dello stato)
+# Inizializzazione globale e Dependency Container (con cache per la persistenza dello stato)
 settings = get_settings()
 from src.infrastructure.logging import configure_logging
 
@@ -200,64 +185,13 @@ def render_auth_pages() -> None:
 
 
 def render_app_pages() -> None:
-    """Router delle viste protette con menu di navigazione laterale e pannello Super Admin."""
+    """Router delle viste protette con menu di navigazione laterale pulito."""
     with st.sidebar:
         st.markdown(f"### 👤 {SessionManager.get_email()}")
         st.caption(f"Ruolo: **{str(SessionManager.get_ruolo()).upper()}**")
         st.caption(f"Azienda: **{SessionManager.get_azienda()}**")
 
         st.divider()
-
-        # Pannello Super Admin / Selettore Clienti in tempo reale (con import dinamico antierrore)
-        user_role = str(SessionManager.get_ruolo()).upper()
-        user_email = SessionManager.get_email()
-
-        if user_role == "ADMIN" or user_email == "andrewdicenso@libero.it":
-            st.markdown("### 👑 Pannello Super Admin")
-            try:
-                # Sfruttiamo il container o cerchiamo il client tramite i servizi registrati
-                supabase = (
-                    container.get_supabase_client()
-                    if hasattr(container, "get_supabase_client")
-                    else None
-                )
-
-                if not supabase:
-                    # Fallback dinamico: evita un import statico non risolto dall'IDE.
-                    from importlib import import_module
-
-                    supabase_module = import_module(
-                        "src.infrastructure.supabase_client"
-                    )
-                    supabase = supabase_module.get_supabase_client()
-
-                response = (
-                    supabase.table("utenti")
-                    .select("id, email, azienda_id, ruolo")
-                    .execute()
-                )
-                utenti_db = response.data if response and response.data else []
-
-                # Lista email clienti registrati
-                lista_clienti = [u.get("email") for u in utenti_db if u.get("email")]
-
-                if lista_clienti:
-                    cliente_selezionato = st.selectbox(
-                        "Seleziona Cliente",
-                        ["Vista Globale (Tutti)"] + lista_clienti,
-                        key="super_admin_client_selector",
-                    )
-                    if cliente_selezionato != "Vista Globale (Tutti)":
-                        st.session_state["target_client_email"] = cliente_selezionato
-                        st.info(f"🎯 Monitoraggio: {cliente_selezionato}")
-                    else:
-                        st.session_state.pop("target_client_email", None)
-                else:
-                    st.info("Nessun cliente nel database.")
-            except Exception as err:
-                st.warning(f"⚠️ Impossibile caricare i clienti: {err}")
-
-            st.divider()
 
         menu = st.radio(
             "Navigazione:",
@@ -293,11 +227,88 @@ def render_app_pages() -> None:
             st.error(f"Errore nel caricamento della War Room: {err}")
 
     elif menu == "📁 Archivio Dati":
-        st.title("📁 Archivio Dati Operativi")
+        st.title("📁 Archivio Dati Operativi e Gestione Abbonamenti")
         st.write(
-            "Qui verranno elencati i file elaborati dal sistema e prelevati dai gestionali."
+            "Panoramica generale dei file di sistema e controllo dei clienti iscritti."
         )
-        st.info("Nessun file presente nell'archivio al momento.")
+
+        user_role = str(SessionManager.get_ruolo()).upper()
+        user_email = SessionManager.get_email()
+        is_admin = user_role == "ADMIN" or user_email == "andrewdicenso@libero.it"
+
+        # Pannello visibile SOLO per gli ADMIN
+        if is_admin:
+            st.markdown("### 👑 Pannello Super Admin & Selettore Cliente")
+            try:
+                db = container.get_database()
+                response = (
+                    db.client.table("utenti")
+                    .select("id, email, azienda_id, ruolo, data_creazione")
+                    .execute()
+                )
+                utenti_db = response.data if response and response.data else []
+                lista_clienti = [u.get("email") for u in utenti_db if u.get("email")]
+
+                if lista_clienti:
+                    cliente_selezionato = st.selectbox(
+                        "Seleziona Cliente in Tempo Reale",
+                        ["Vista Globale (Tutti)"] + lista_clienti,
+                        key="super_admin_client_selector",
+                    )
+                    if cliente_selezionato != "Vista Globale (Tutti)":
+                        st.session_state["target_client_email"] = cliente_selezionato
+                        st.info(f"🎯 Monitoraggio attivo su: **{cliente_selezionato}**")
+                    else:
+                        st.session_state.pop("target_client_email", None)
+                        st.info("🌍 Monitoraggio in **Vista Globale (Tutti)**")
+                else:
+                    st.info("Nessun cliente registrato nel database.")
+            except Exception as err:
+                st.warning(f"⚠️ Impossibile caricare i clienti per la selezione: {err}")
+
+            st.divider()
+
+            # Elenco Clienti visibile SOLO agli admin
+            st.markdown("### 📋 Elenco Clienti e Stato Abbonamenti")
+            try:
+                if utenti_db:
+                    import pandas as pd  # pylint: disable=import-outside-toplevel
+
+                    df_utenti = pd.DataFrame(utenti_db)
+                    st.dataframe(
+                        df_utenti[["email", "ruolo", "azienda_id", "data_creazione"]],
+                        use_container_width=True,
+                    )
+                else:
+                    st.info("Nessun cliente registrato.")
+            except Exception as err:
+                st.warning(f"⚠️ Impossibile caricare la lista clienti: {err}")
+
+            st.divider()
+        else:
+            # Vista dedicata per utenti standard (non vedono gli altri utenti)
+            st.info("ℹ️ Area riservata ai dati della tua azienda.")
+
+        # Sezione centrale: Archivio Asset/File (filtrata per utente se non admin)
+        st.markdown("### 📂 File e Asset di Sistema")
+        try:
+            db = container.get_database()
+            query = db.client.table("assets").select("*")
+
+            # Se non è admin, filtra eventualmente per la sua azienda o ID se previsto dalla tabella
+            # (Adattabile in base alla struttura della tabella assets)
+            response = query.execute()
+            assets_data = response.data if response and response.data else []
+
+            if assets_data:
+                import pandas as pd  # pylint: disable=import-outside-toplevel
+
+                df_assets = pd.DataFrame(assets_data)
+                st.dataframe(df_assets, use_container_width=True)
+            else:
+                st.info("Nessun file o asset presente nell'archivio al momento.")
+        except Exception as err:
+            st.warning(f"⚠️ Impossibile caricare l'archivio dati: {err}")
 
 
 # ==========================================

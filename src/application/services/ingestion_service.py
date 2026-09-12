@@ -33,7 +33,6 @@ class IngestionService(BaseService):
         self.asset_repo = asset_repo
         self.strategy = AttentionMappingStrategy()
 
-        # Database esteso delle firme digitali dei sistemi gestionali di mercato (Fingerprinting)
         self.enterprise_signatures = {
             "SAP_MM": ["MATNR", "WERKS", "LABST", "MEINS", "LGORT"],
             "SAP_SD": ["KUNNR", "VKORG", "MATNR", "KWMENG", "VRKME"],
@@ -52,6 +51,63 @@ class IngestionService(BaseService):
             ],
             "STANDARD_MAGAZZINO": ["id", "nome", "quantita", "prezzo", "rischio"],
         }
+
+    def analizza_capacita_file(self, df: pd.DataFrame) -> dict:
+        """
+        Analizza le colonne del file e determina quali processi aziendali sono possibili.
+        """
+        colonne = set(df.columns)
+        report = {
+            "kpi_disponibili": False,
+            "magazzino_disponibile": False,
+            "asset_disponibili": False,
+            "messaggi": [],
+        }
+
+        kpi_cols = {
+            "KPI_Produttività",
+            "KPI_Efficienza",
+            "KPI_Rendimento",
+            "KPI_Saturazione",
+        }
+        if kpi_cols.issubset(colonne):
+            report["kpi_disponibili"] = True
+        else:
+            mancanti = kpi_cols - colonne
+            report["messaggi"].append(
+                f"❌ KPI non generabili: mancano {', '.join(mancanti)}"
+            )
+
+        mag_cols = {"CodiceArticolo", "Quantità", "Magazzino"}
+        if mag_cols.issubset(colonne):
+            report["magazzino_disponibile"] = True
+        else:
+            mancanti = mag_cols - colonne
+            report["messaggi"].append(
+                f"❌ Analisi Magazzino non possibile: mancano {', '.join(mancanti)}"
+            )
+
+        asset_cols = {"Asset", "Rischio", "Stato"}
+        if asset_cols.issubset(colonne):
+            report["asset_disponibili"] = True
+        else:
+            mancanti = asset_cols - colonne
+            report["messaggi"].append(
+                f"❌ Analisi Asset non possibile: mancano {', '.join(mancanti)}"
+            )
+
+        if not any(
+            [
+                report["kpi_disponibili"],
+                report["magazzino_disponibile"],
+                report["asset_disponibili"],
+            ]
+        ):
+            report["messaggi"].append(
+                "❌ Il file non contiene dati utili per nessuno dei processi disponibili."
+            )
+
+        return report
 
     def _detect_source_system(self, columns: list[str]) -> str:
         cols_upper = [str(c).upper() for c in columns]
@@ -77,8 +133,7 @@ class IngestionService(BaseService):
 
     def _smart_repair_logic(self, bad_line: list[str]) -> list[str]:
         if len(bad_line) > 2:
-            fixed_line = bad_line[:2] + [" ".join(bad_line[2:])]
-            return fixed_line
+            return bad_line[:2] + [" ".join(bad_line[2:])]
         return bad_line
 
     def log_ingestion_error(self, error_type: str, details: str) -> None:
@@ -92,23 +147,23 @@ class IngestionService(BaseService):
         )
 
         FORMATI_TABULARI = [".csv", ".xlsx", ".xls", ".txt"]
-
         nome_file = getattr(file_content, "name", "file_sconosciuto").lower()
+
         if not isinstance(file_content, (bytes, io.BytesIO)) and not any(
             nome_file.endswith(ext) for ext in FORMATI_TABULARI
         ):
             self.log_ingestion_error(
                 "INVALID_FILE_FORMAT",
-                f"Formato file non tabulare o non supportato per l'ingestione diretta: {nome_file}",
+                f"Formato file non tabulare o non supportato: {nome_file}",
             )
             return []
 
-        if isinstance(file_content, bytes):
-            buffer = io.BytesIO(file_content)
-        else:
-            buffer = file_content
-
-        df: pd.DataFrame = pd.DataFrame()
+        buffer = (
+            io.BytesIO(file_content)
+            if isinstance(file_content, bytes)
+            else file_content
+        )
+        df = pd.DataFrame()
 
         try:
             buffer.seek(0)
@@ -130,13 +185,13 @@ class IngestionService(BaseService):
             except Exception as inner_e:
                 self.log_ingestion_error(
                     "CRITICAL_PARSING_FAILURE",
-                    f"CSV error: {e} | Excel error: {inner_e}",
+                    f"Errore di parsing (CSV: {e} | Excel: {inner_e})",
                 )
                 return []
 
         if df is None or df.empty:
             self.log_ingestion_error(
-                "EMPTY_FILE", "Il file caricato non contiene dati o colonne valide."
+                "EMPTY_FILE", "Il file caricato non contiene dati o righe valide."
             )
             return []
 
@@ -144,20 +199,6 @@ class IngestionService(BaseService):
         df = df.dropna(how="all")
 
         detected_system = self._detect_source_system(df.columns.tolist())
-
-        numeric_cols = [
-            "rischio",
-            "quantita",
-            "prezzo",
-            "costo",
-            "valore",
-            "livello_servizio",
-            "volatilita",
-        ]
-        for col in numeric_cols:
-            if col in df.columns:
-                df[col] = pd.to_numeric(df[col], errors="coerce").astype("float32")
-
         settore = self.strategy.identify_sector(df.columns)
 
         assets: list[Asset] = []
@@ -174,7 +215,7 @@ class IngestionService(BaseService):
             except Exception as e:
                 self.log_ingestion_error(
                     "ASSET_CREATION_FAILURE",
-                    f"Riga scartata a causa di un errore nei dati: {e}",
+                    f"Scartata riga {idx + 1} per errore di dominio: {e}",
                 )
 
         if self.asset_repo and assets:
@@ -182,15 +223,15 @@ class IngestionService(BaseService):
                 for asset in assets:
                     self.asset_repo.save(asset)
                 self.log_info(
-                    f"Persistenza di {len(assets)} asset completata sul repository."
+                    f"Persistenza completata: {len(assets)} asset salvati sul repository."
                 )
             except Exception as db_err:
                 self.log_warning(
-                    f"Errore durante il salvataggio degli asset su DB: {db_err}"
+                    f"Errore non bloccante durante la persistenza su DB: {db_err}"
                 )
 
         self.log_info(
-            f"Ingestione completata: {len(assets)} asset generati con successo dal sistema {detected_system}."
+            f"Ingestione completata con successo: {len(assets)} asset elaborati da {detected_system}."
         )
         return assets
 
@@ -257,8 +298,11 @@ class IngestionService(BaseService):
 
         if "quantita" not in pulito or pulito["quantita"] is None:
             pulito["quantita"] = 1.0
-        if "rischio" not in pulito or pulito["rischio"] is None:
-            pulito["rischio"] = 0.0
+        else:
+            try:
+                pulito["quantita"] = float(pulito["quantita"])
+            except (ValueError, TypeError):
+                pulito["quantita"] = 1.0
 
         raw_rischio = pulito.get("rischio", 0.0)
         try:

@@ -3,6 +3,7 @@ DI Container - Dependency Injection Container per RGD-Alpha.
 Gestisce l'istanziazione delle dependencies in modo centralizzato.
 """
 
+import importlib
 import logging
 from typing import Any
 
@@ -19,6 +20,7 @@ class DIContainer:
         container = DIContainer()
         asset_service = container.get_asset_service()
         analysis_service = container.get_analysis_service()
+        kpi_service = container.get_kpi_service()
     """
 
     def __init__(self, settings: Settings | None = None):
@@ -35,13 +37,14 @@ class DIContainer:
         # Registra settings come singleton
         self._register_singleton("settings", self.settings)
 
+    # ============================================================
+    # REGISTRAZIONE SINGLETON / FACTORY
+    # ============================================================
     def _register_singleton(self, name: str, instance: Any) -> None:
-        """Registra un'istanza singleton."""
         self._singletons[name] = instance
         logger.debug(f"✓ Singleton registered: {name}")
 
     def _register_factory(self, name: str, factory: callable) -> None:
-        """Registra una factory function."""
         self._factories[name] = factory
         logger.debug(f"✓ Factory registered: {name}")
 
@@ -50,24 +53,23 @@ class DIContainer:
         Ottiene una dependency dal container.
 
         Precedenza:
-        1. Singletons (istanze già create)
-        2. Factories (lazy loading)
+        1. Singletons
+        2. Factories
         3. Exception se non trovato
         """
-        # Prova singleton prima
         if name in self._singletons:
             return self._singletons[name]
 
-        # Prova factory (lazy load)
         if name in self._factories:
             instance = self._factories[name]()
-            self._singletons[name] = instance  # Cache come singleton
+            self._singletons[name] = instance
             return instance
 
         raise ValueError(f"❌ Dependency '{name}' not registered in DIContainer")
 
-    # ========== SERVICE & REPOSITORY GETTERS (Operativi) ==========
-
+    # ============================================================
+    # DATABASE & REPOSITORIES
+    # ============================================================
     def get_database(self):
         if "database" not in self._singletons:
             from src.infrastructure.persistence.db.connection import DatabaseConnection
@@ -90,24 +92,53 @@ class DIContainer:
 
         return AssetRepository(db=self.get_database())
 
-    def get_gemini_provider(self):
-        if "gemini_provider" not in self._singletons:
-            from src.infrastructure.external.providers import GeminiProvider
+    # ============================================================
+    # 🔥 AI PROVIDER (Groq Ultra + Gemini Free + Offline)
+    # ============================================================
+    def get_ai_provider(self):
+        if "ai_provider" not in self._singletons:
+            AIProvider = None
 
-            instance = GeminiProvider()
-            self._register_singleton("gemini_provider", instance)
-        return self._singletons["gemini_provider"]
+            for module_name in (
+                "src.ai_modules.modelli.factory",
+                "src.ai_modules.modelli.provider_groq",
+                "src.ai_modules.modelli.provider_gemini",
+                "src.ai_modules.modelli.base_model",
+                "src.infrastructure.external.providers.ai_provider",
+                "src.infrastructure.external.ai_provider",
+            ):
+                try:
+                    module = importlib.import_module(module_name)
+                    AIProvider = module.AIProvider
+                    break
+                except (ImportError, AttributeError):
+                    continue
 
+            if AIProvider is None:
+                raise ImportError(
+                    "Unable to import AIProvider from any known module path."
+                )
+
+            instance = AIProvider()
+            self._register_singleton("ai_provider", instance)
+
+        return self._singletons["ai_provider"]
+
+    # ============================================================
+    # SERVICES
+    # ============================================================
     def get_auth_service(self):
         from src.application.services.auth_service import AuthService
 
         return AuthService(user_repo=self.get_user_repository())
 
     def get_asset_service(self):
-        """Restituisce l'AssetService collegato al suo Repository reale."""
         from src.application.services.asset_service import AssetService
 
-        return AssetService(asset_repo=self.get_asset_repository())
+        return AssetService(
+            asset_repo=self.get_asset_repository(),
+            ai_provider=self.get_ai_provider(),
+        )
 
     def get_analysis_service(self):
         from src.application.services.analysis_service import AnalysisService
@@ -117,19 +148,26 @@ class DIContainer:
 
         kpi_repo = KPIRepository(db=self.get_database())
         asset_repo = self.get_asset_repository()
-        gemini_provider = self.get_gemini_provider()
+        ai_provider = self.get_ai_provider()
 
         return AnalysisService(
-            kpi_repo=kpi_repo, asset_repo=asset_repo, gemini_provider=gemini_provider
+            kpi_repo=kpi_repo,
+            asset_repo=asset_repo,
+            ai_provider=ai_provider,
         )
 
     def get_ingestion_service(self):
         from src.application.services.ingestion_service import IngestionService
+
+        return IngestionService(asset_repo=self.get_asset_repository())
+
+    # ============================================================
+    # ⭐ KPI SERVICE (AGGIUNTO COME RICHIESTO)
+    # ============================================================
+    def get_kpi_service(self):
+        from src.application.services.kpi_service import KPIService
         from src.infrastructure.persistence.repositories.kpi_repository import (
             KPIRepository,
         )
 
-        return IngestionService(
-            asset_repo=self.get_asset_repository(),
-            kpi_repo=KPIRepository(db=self.get_database()),
-        )
+        return KPIService(kpi_repo=KPIRepository(db=self.get_database()))

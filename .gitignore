@@ -16,6 +16,7 @@ uploads/
 tmp/
 
 # --- AMBIENTI VIRTUALI PYTHON ---
+.venv/
 venv/
 env/
 ENV/
@@ -26,6 +27,7 @@ ENV/
 .idea/
 *.swp
 *.swo
+*.code-workspace
 
 # --- FILE DI SISTEMA WINDOWS ---
 Thumbs.db
@@ -36,11 +38,20 @@ Desktop.ini
 test_*.py
 debug.log
 
+# --- NODE ---
 node_modules/
 
 # --- CACHE PYTHON ---
 __pycache__/
 *.pyc
 *.pyo
-# --- STREAMLIT SECRETS ---
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# --- STREAMLIT ---
 .streamlit/
+.streamlit/logs/
+
+# --- COVERAGE ---
+.coverage
