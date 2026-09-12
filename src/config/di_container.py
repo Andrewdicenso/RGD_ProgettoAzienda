@@ -3,7 +3,6 @@ DI Container - Dependency Injection Container per RGD-Alpha.
 Gestisce l'istanziazione delle dependencies in modo centralizzato.
 """
 
-import importlib
 import logging
 from typing import Any
 
@@ -93,33 +92,14 @@ class DIContainer:
         return AssetRepository(db=self.get_database())
 
     # ============================================================
-    # 🔥 AI PROVIDER (Groq Ultra + Gemini Free + Offline)
+    # 🔥 AI PROVIDER (Import Diretto e Sicuro)
     # ============================================================
     def get_ai_provider(self):
         if "ai_provider" not in self._singletons:
-            AIProvider = None
-
-            for module_name in (
-                "src.ai_modules.modelli.factory",
-                "src.ai_modules.modelli.providers",
-                "src.ai_modules.modelli.provider_groq",
-                "src.ai_modules.modelli.provider_gemini",
-                "src.ai_modules.modelli.base_model",
-                "src.infrastructure.external.providers",
-                "src.infrastructure.external.ai_provider",
-            ):
-                try:
-                    module = importlib.import_module(module_name)
-                    if hasattr(module, "AIProvider"):
-                        AIProvider = module.AIProvider
-                        break
-                except (ImportError, AttributeError):
-                    continue
-
-            if AIProvider is None:
-                raise ImportError(
-                    "Unable to import AIProvider from any known module path."
-                )
+            try:
+                from src.ai_modules.modelli.factory import AIProvider
+            except ImportError:
+                from src.infrastructure.external.providers import AIProvider
 
             instance = AIProvider()
             self._register_singleton("ai_provider", instance)
@@ -164,7 +144,7 @@ class DIContainer:
         return IngestionService(asset_repo=self.get_asset_repository())
 
     # ============================================================
-    # ⭐ KPI SERVICE (AGGIUNTO COME RICHIESTO)
+    # ⭐ KPI SERVICE
     # ============================================================
     def get_kpi_service(self):
         from src.application.services.kpi_service import KPIService
