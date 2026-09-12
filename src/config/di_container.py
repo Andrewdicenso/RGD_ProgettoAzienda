@@ -101,16 +101,18 @@ class DIContainer:
 
             for module_name in (
                 "src.ai_modules.modelli.factory",
+                "src.ai_modules.modelli.providers",
                 "src.ai_modules.modelli.provider_groq",
                 "src.ai_modules.modelli.provider_gemini",
                 "src.ai_modules.modelli.base_model",
-                "src.infrastructure.external.providers.ai_provider",
+                "src.infrastructure.external.providers",
                 "src.infrastructure.external.ai_provider",
             ):
                 try:
                     module = importlib.import_module(module_name)
-                    AIProvider = module.AIProvider
-                    break
+                    if hasattr(module, "AIProvider"):
+                        AIProvider = module.AIProvider
+                        break
                 except (ImportError, AttributeError):
                     continue
 
