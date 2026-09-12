@@ -31,6 +31,10 @@ class GeminiEnterpriseProvider(AIModelInterface):
         """Implementa la generazione di consigli operativi richiesta dall'interfaccia."""
         return self._generate(context)
 
+    def generate_text(self, prompt: str, **kwargs: Any) -> str | None:
+        """Implementa la generazione di testo richiesta dall'interfaccia."""
+        return self._generate(prompt)
+
     def _generate(self, prompt: str) -> str | None:
         try:
             if types is None:

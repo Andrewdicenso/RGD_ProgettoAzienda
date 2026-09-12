@@ -28,9 +28,10 @@ class IngestionService(BaseService):
     normalizza i flussi eterogenei e li trasforma in entità di dominio trasparenti per RGD-Alpha.
     """
 
-    def __init__(self, asset_repo=None):
+    def __init__(self, asset_repo=None, ai_provider=None):
         super().__init__("IngestionService")
         self.asset_repo = asset_repo
+        self.ai_provider = ai_provider
         self.strategy = AttentionMappingStrategy()
 
         self.enterprise_signatures = {
@@ -54,7 +55,8 @@ class IngestionService(BaseService):
 
     def analizza_capacita_file(self, df: pd.DataFrame) -> dict:
         """
-        Analizza le colonne del file e determina quali processi aziendali sono possibili.
+        Analizza le colonne del file e determina quali processi aziendali sono possibili,
+        attivando un fallback semantico tramite AI se la struttura non è riconosciuta.
         """
         colonne = set(df.columns)
         report = {
@@ -62,6 +64,8 @@ class IngestionService(BaseService):
             "magazzino_disponibile": False,
             "asset_disponibili": False,
             "messaggi": [],
+            "semantic_warning": False,
+            "ai_suggestions": None,
         }
 
         kpi_cols = {
@@ -72,29 +76,14 @@ class IngestionService(BaseService):
         }
         if kpi_cols.issubset(colonne):
             report["kpi_disponibili"] = True
-        else:
-            mancanti = kpi_cols - colonne
-            report["messaggi"].append(
-                f"❌ KPI non generabili: mancano {', '.join(mancanti)}"
-            )
 
         mag_cols = {"CodiceArticolo", "Quantità", "Magazzino"}
         if mag_cols.issubset(colonne):
             report["magazzino_disponibile"] = True
-        else:
-            mancanti = mag_cols - colonne
-            report["messaggi"].append(
-                f"❌ Analisi Magazzino non possibile: mancano {', '.join(mancanti)}"
-            )
 
         asset_cols = {"Asset", "Rischio", "Stato"}
         if asset_cols.issubset(colonne):
             report["asset_disponibili"] = True
-        else:
-            mancanti = asset_cols - colonne
-            report["messaggi"].append(
-                f"❌ Analisi Asset non possibile: mancano {', '.join(mancanti)}"
-            )
 
         if not any(
             [
@@ -104,8 +93,29 @@ class IngestionService(BaseService):
             ]
         ):
             report["messaggi"].append(
-                "❌ Il file non contiene dati utili per nessuno dei processi disponibili."
+                "❌ Il file non contiene uno schema standard direttamente compatibile."
             )
+
+            # Fallback Semantico con AI se disponibile
+            if self.ai_provider:
+                try:
+                    prompt = (
+                        f"Analizza le seguenti intestazioni di un file aziendale caricato: {list(colonne)}. "
+                        "Il sistema richiede concetti simili a magazzino, asset o KPI. "
+                        "Fornisci una breve analisi tecnica in italiano suggerendo a quali campi noti "
+                        "potrebbero corrispondere queste colonne anomale."
+                    )
+                    ai_analysis = self.ai_provider.generate_text(prompt)
+                    if ai_analysis:
+                        report["semantic_warning"] = True
+                        report["ai_suggestions"] = ai_analysis
+                        report["messaggi"].append(
+                            "⚠️ Analisi semantica AI attivata per tracciato non standard."
+                        )
+                except Exception as e:
+                    self.log_warning(
+                        f"Impossibile completare l'analisi semantica AI del tracciato: {e}"
+                    )
 
         return report
 

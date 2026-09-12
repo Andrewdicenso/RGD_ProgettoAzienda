@@ -117,6 +117,14 @@ def show():
                 for msg in capacita.get("messaggi", []):
                     st.warning(msg)
 
+                # Mostra eventuali suggerimenti semantici dell'AI se attivati
+                if capacita.get("semantic_warning") and capacita.get("ai_suggestions"):
+                    with st.expander(
+                        "🤖 Dettagli Analisi Semantica AI (Fallback Tracciato)",
+                        expanded=True,
+                    ):
+                        st.write(capacita.get("ai_suggestions"))
+
                 # ============================================================
                 # 3️⃣ SPIEGAZIONE AI DEL FILE ACQUISITO
                 # ============================================================

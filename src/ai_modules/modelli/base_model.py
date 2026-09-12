@@ -20,6 +20,10 @@ class AIModelInterface(ABC):
     def generate_advice(self, context: str) -> str | None:
         """Genera un consiglio operativo basato sul contesto fornito."""
 
+    @abstractmethod
+    def generate_text(self, prompt: str, **kwargs: Any) -> str | None:
+        """Genera testo grezzo o risponde a un prompt testuale diretto."""
+
     def log_ai_error(self, error_type: str, details: str) -> None:
         """Metodo standard per loggare errori di integrazione AI."""
         self.logger.error(f"[{error_type}] {details}")

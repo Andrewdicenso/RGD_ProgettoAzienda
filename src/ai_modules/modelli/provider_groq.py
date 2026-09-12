@@ -151,6 +151,36 @@ class GroqAIProvider(AIModelInterface):
                 logger.error(err_msg)
             return None
 
+    def generate_text(self, prompt: str, **kwargs: Any) -> str | None:
+        """
+        Genera testo grezzo o risponde a un prompt testuale diretto sfruttando il provider attivo.
+        """
+        if not self.client:
+            return None
+
+        try:
+            if self.provider_type == "gemini":
+                response = self.client.models.generate_content(
+                    model=self.model_name, contents=prompt
+                )
+                return response.text
+
+            elif self.provider_type == "groq":
+                completion = self.client.chat.completions.create(
+                    messages=[{"role": "user", "content": prompt}],
+                    model=self.model_name,
+                    temperature=kwargs.get("temperature", 0.3),
+                )
+                return completion.choices[0].message.content
+
+        except Exception as e:
+            err_msg = f"Errore durante la generazione del testo con il provider {self.provider_type}: {e}"
+            if hasattr(self, "log_ai_error"):
+                self.log_ai_error("AI_TEXT_GENERATION_ERROR", err_msg)
+            else:
+                logger.error(err_msg)
+            return None
+
 
 # Alias per la compatibilità con il Factory Pattern e la Dependency Injection
 GroqProvider = GroqAIProvider
