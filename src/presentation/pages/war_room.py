@@ -73,9 +73,13 @@ def show():
                 # ============================================================
                 # 1️⃣ INGESTIONE E NORMALIZZAZIONE MULTI-SISTEMA
                 # ============================================================
-                assets = ingestore.process_file(
-                    uploaded_file, SessionManager.get_user_id()
-                )
+                user_id = SessionManager.get_user_id()
+                if user_id is None:
+                    status.update(label="⚠️ Utente non autenticato", state="error")
+                    st.error("Impossibile identificare l'utente corrente.")
+                    return
+
+                assets = ingestore.process_file(uploaded_file, user_id)
 
                 if not assets:
                     status.update(label="⚠️ Nessun dato rilevato", state="error")
@@ -128,7 +132,7 @@ def show():
                 # ============================================================
                 # 3️⃣ SPIEGAZIONE AI DEL FILE ACQUISITO
                 # ============================================================
-                spiegazione_ai = ai.generate_text(
+                spiegazione_ai = ai.generate_advice(
                     prompt=f"""
                     Sei un analista aziendale senior specializzato in sistemi ERP e logistica.
                     Spiega all'utente il significato dei dati estratti dal tracciato.
@@ -167,10 +171,8 @@ def show():
                 # ============================================================
                 for asset in assets:
                     try:
-                        rischio_val = (
-                            asset.rischio.value
-                            if hasattr(asset.rischio, "value")
-                            else float(asset.rischio)
+                        rischio_val = float(
+                            str(getattr(asset.rischio, "value", asset.rischio))
                         )
                         history = [rischio_val] * 5
                         analisi_dto = analizzatore.analyze_asset_risk(asset, history)
@@ -229,7 +231,13 @@ def show():
         # ============================================================
         if "assets" in locals() and assets:
             st.subheader("🎮 Simulatore Decisionale (What‑If Engine)")
-            simulatore = container.get_simulatore_decisionale_service()
+            simulatore_factory = getattr(
+                container, "get_simulatore_decisionale_service", None
+            )
+            if simulatore_factory is None:
+                st.error("Il servizio di simulazione decisionale non è disponibile.")
+                return
+            simulatore = simulatore_factory()
 
             asset_scelto = st.selectbox(
                 "Seleziona un asset per la simulazione strategica",

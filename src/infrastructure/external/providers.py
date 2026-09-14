@@ -203,11 +203,28 @@ class AIProvider:
             logger.info("Gemini API key non trovata: Validator disabilitato.")
             return
         try:
-            # Import lazy per evitare errori in ambiente di sviluppo senza SDK
-            import google.generativeai as genai  # type: ignore
+            # Supporta entrambi i SDK Gemini: vecchio (`google.generativeai`) e nuovo (`google.genai`).
+            try:
+                import google.generativeai as genai  # type: ignore
 
-            self.gemini_client = genai.Client(api_key=self.gemini_key)
-            logger.info("Gemini client inizializzato.")
+                # `configure` is available at runtime but is not exported in
+                # some type stubs for google.generativeai. Use getattr() to
+                # avoid static-analysis errors while still supporting the SDK.
+                configure = getattr(genai, "configure", None)
+                if configure is None:
+                    raise AttributeError(
+                        "google.generativeai.configure is not available"
+                    )
+
+                configure(api_key=self.gemini_key)  # type: ignore[misc]
+                self.gemini_client = genai
+                logger.info("Gemini client inizializzato (google.generativeai).")
+                return
+            except Exception:
+                from google import genai as google_genai  # type: ignore
+
+                self.gemini_client = google_genai.Client(api_key=self.gemini_key)
+                logger.info("Gemini client inizializzato (google.genai).")
         except Exception as e:
             logger.warning("Impossibile inizializzare Gemini SDK: %s", e)
             self.gemini_client = None
