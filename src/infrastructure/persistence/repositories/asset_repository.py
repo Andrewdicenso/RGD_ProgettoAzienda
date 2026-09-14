@@ -200,7 +200,7 @@ class AssetRepository(BaseRepository[src.domain.Asset]):
             self.db.table(self._table)
             .select("*")
             .eq("company_id", company_id)
-            .gt("rischio", 70)
+            .gt("rischio", 7.0)
             .execute()
         )
 
